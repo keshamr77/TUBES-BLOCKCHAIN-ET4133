@@ -94,6 +94,8 @@ Lalu buka **http://localhost:5180** di browser Windows. Pakai `localhost`, bukan
 
 Panduan demo langkah demi langkah: [`docs/PANDUAN-DEMO.md`](docs/PANDUAN-DEMO.md).
 
+Foto latar di bagian atas halaman tidak disertakan di repositori karena merupakan gambar pihak ketiga. Jika ingin memakainya, letakkan berkas gambar di `frontend/assets/hero-timbangan.webp`. Tanpa berkas itu, halaman tetap berjalan dengan latar gradien.
+
 > ⚠️ Akun di frontend memakai **kunci uji publik** (anvil dan tutorial Besu). `frontend/config.js` dibuat otomatis dan tidak di-commit. Jangan pernah memakai kunci ini di jaringan sungguhan.
 
 ## Jaringan Besu QBFT
