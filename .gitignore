@@ -1,0 +1,30 @@
+# Compiler files
+cache/
+out/
+
+# Commonly ignored directories
+.logs/
+.ignore/
+
+# Ignores development broadcast logs
+!/broadcast
+/broadcast/*/31337/
+/broadcast/**/dry-run/
+
+# Docs
+docs/
+
+# Dotenv file
+.env
+.env.*
+!.env.example
+.venv/
+broadcast/
+
+# Besu network: chain data, runtime files and validator keys
+besu-network/Node-*/data/
+besu-network/Node-*/key
+besu-network/Node-*/key.pub
+besu-network/networkFiles/
+besu-network/logs/
+besu-network/run/
