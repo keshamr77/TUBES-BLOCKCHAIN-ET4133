@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SAKSI — Simulasi Serah-Terima Bukti Digital</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">SAKSI</span>
+      <span class="tagline">Simulasi Serah-Terima Bukti Digital</span>
+    </div>
+    <div class="netinfo">
+      <span id="net-badge" class="badge">menghubungkan…</span>
+      <span>Blok <strong id="block-number">–</strong></span>
+      <span id="pause-badge" class="badge badge-warn" hidden>SISTEM DIJEDA</span>
+    </div>
+  </header>
+
+  <div id="fatal" class="fatal" hidden></div>
+
+  <main class="layout">
+    <section class="card roles">
+      <h2>1. Pilih peran</h2>
+      <p class="hint">Setiap peran memakai akun uji lokal. Ganti peran untuk mensimulasikan orang yang berbeda.</p>
+      <div id="role-list" class="role-list"></div>
+    </section>
+
+    <section class="card">
+      <h2>2. Daftarkan bukti baru</h2>
+      <p class="hint">Hanya <strong>Penyidik</strong> yang boleh mendaftarkan. Coba dengan peran lain untuk melihat penolakan.</p>
+      <form id="register-form" class="form">
+        <label>Nomor perkara
+          <input name="caseNumber" maxlength="64" placeholder="LP/123/XI/2026" required>
+        </label>
+        <label>Deskripsi
+          <input name="description" maxlength="256" placeholder="Citra disk laptop tersangka">
+        </label>
+        <label>Berkas bukti
+          <input name="file" type="file" required>
+        </label>
+        <div class="hash-line">SHA-256: <code id="register-hash">–</code></div>
+        <button type="submit" class="btn btn-primary">Daftarkan bukti</button>
+      </form>
+      <div class="samples">
+        <span class="hint">Belum punya berkas? </span>
+        <button type="button" id="sample-original" class="btn btn-small">Unduh berkas contoh</button>
+        <button type="button" id="sample-tampered" class="btn btn-small" disabled>Unduh versi yang diubah</button>
+      </div>
+    </section>
+
+    <section class="card wide">
+      <div class="card-head">
+        <h2>3. Daftar bukti</h2>
+        <button type="button" id="refresh" class="btn btn-small">Muat ulang</button>
+      </div>
+      <div class="table-wrap">
+        <table class="evidence-table">
+          <thead>
+            <tr><th>#</th><th>Nomor perkara</th><th>Deskripsi</th><th>Pemegang</th><th>Status</th><th>Aksi untuk peran Anda</th></tr>
+          </thead>
+          <tbody id="evidence-body">
+            <tr><td colspan="6" class="empty">Belum ada bukti.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card wide" id="detail" hidden>
+      <div class="card-head">
+        <h2>Riwayat bukti <span id="detail-id"></span></h2>
+        <button type="button" id="detail-close" class="btn btn-small">Tutup</button>
+      </div>
+      <div id="detail-info" class="detail-info"></div>
+      <div class="verify">
+        <label>Periksa keutuhan berkas
+          <input id="verify-file" type="file">
+        </label>
+        <div id="verify-result" class="verify-result"></div>
+      </div>
+      <ol id="timeline" class="timeline"></ol>
+    </section>
+
+    <section class="card">
+      <h2>Panel admin</h2>
+      <p class="hint">Hanya <strong>Admin</strong> yang boleh menjeda sistem. Saat dijeda, semua perubahan data ditolak.</p>
+      <div class="row">
+        <button type="button" id="pause" class="btn">Jeda sistem</button>
+        <button type="button" id="unpause" class="btn">Lanjutkan sistem</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Log transaksi</h2>
+      <ul id="log" class="log"></ul>
+    </section>
+  </main>
+
+  <dialog id="action-dialog">
+    <form method="dialog" id="action-form" class="form">
+      <h3 id="action-title"></h3>
+      <p id="action-desc" class="hint"></p>
+      <div id="action-fields"></div>
+      <div class="row end">
+        <button value="cancel" class="btn" formnovalidate>Batal</button>
+        <button value="ok" id="action-submit" class="btn btn-primary">Kirim</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="vendor/ethers.umd.min.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
