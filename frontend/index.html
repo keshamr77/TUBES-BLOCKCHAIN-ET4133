@@ -4,99 +4,220 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SAKSI — Simulasi Serah-Terima Bukti Digital</title>
+  <link rel="preload" href="vendor/fonts/playfair-display-latin-600-italic.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="vendor/fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="logo">SAKSI</span>
-      <span class="tagline">Simulasi Serah-Terima Bukti Digital</span>
+  <a class="skip-link" href="#simulasi">Lewati ke simulasi</a>
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="container topbar-inner">
+      <a href="#beranda" class="logo" aria-label="SAKSI, ke beranda">SAKSI</a>
+      <ul class="topbar-facts" aria-label="Informasi jaringan">
+        <li id="topbar-network">Jaringan Besu QBFT</li>
+        <li id="topbar-validators">4 Validator</li>
+        <li id="topbar-blocktime">Blok 2 detik</li>
+      </ul>
     </div>
-    <div class="netinfo">
-      <span id="net-badge" class="badge">menghubungkan…</span>
-      <span>Blok <strong id="block-number">–</strong></span>
-      <span id="pause-badge" class="badge badge-warn" hidden>SISTEM DIJEDA</span>
+  </div>
+
+  <!-- Navigasi -->
+  <nav class="mainnav" aria-label="Navigasi utama">
+    <div class="container mainnav-inner">
+      <ul class="nav-links">
+        <li><a href="#fitur">Prinsip</a></li>
+        <li><a href="#peran">Peran</a></li>
+        <li><a href="#daftarkan">Daftarkan</a></li>
+        <li><a href="#bukti">Daftar Bukti</a></li>
+        <li><a href="#admin">Admin</a></li>
+        <li><a href="#log-panel">Log</a></li>
+      </ul>
+      <div class="nav-tools">
+        <span class="chain-status">
+          <span id="net-badge" class="badge">menghubungkan…</span>
+          <span class="block-chip">Blok <strong id="block-number">–</strong></span>
+        </span>
+        <span id="pause-badge" class="badge badge-warn" hidden>SISTEM DIJEDA</span>
+        <label class="role-quick">
+          <span>Peran aktif</span>
+          <select id="role-select" aria-label="Pilih peran aktif"></select>
+        </label>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <header id="beranda" class="hero">
+    <svg class="hero-art" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">
+      <defs>
+        <!-- userSpaceOnUse: gradien bawaan (objectBoundingBox) tidak tergambar pada garis lurus vertikal/horizontal -->
+        <linearGradient id="goldLine" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1200" y2="600">
+          <stop offset="0" stop-color="#D0AE72"/>
+          <stop offset="1" stop-color="#8C6E3C"/>
+        </linearGradient>
+      </defs>
+      <!-- Rantai blok (timbangan ada di foto latar) -->
+      <g fill="none" stroke="url(#goldLine)" stroke-width="2" opacity=".3">
+        <rect x="70" y="430" width="120" height="80" rx="6"/>
+        <rect x="250" y="430" width="120" height="80" rx="6"/>
+        <rect x="430" y="430" width="120" height="80" rx="6"/>
+        <rect x="610" y="430" width="120" height="80" rx="6"/>
+        <path d="M190 470 h60 M370 470 h60 M550 470 h60"/>
+        <circle cx="220" cy="470" r="9"/>
+        <circle cx="400" cy="470" r="9"/>
+        <circle cx="580" cy="470" r="9"/>
+        <path d="M90 452 h60 M90 470 h80 M90 488 h40 M270 452 h60 M270 470 h80 M270 488 h40 M450 452 h60 M450 470 h80 M450 488 h40 M630 452 h60 M630 470 h80 M630 488 h40" opacity=".7"/>
+      </g>
+    </svg>
+    <div class="hero-overlay" aria-hidden="true"></div>
+    <div class="container hero-content">
+      <p class="eyebrow">Pencatatan Serah-Terima Bukti Digital</p>
+      <h1>Setiap Bukti Punya Jejak</h1>
+      <p class="hero-sub">SAKSI mencatat setiap perpindahan bukti digital di blockchain permissioned. Hash berkas dicocokkan saat serah-terima, sehingga perubahan isi berkas langsung terdeteksi.</p>
+      <a href="#simulasi" class="btn btn-primary btn-lg">Mulai Simulasi</a>
     </div>
   </header>
 
-  <div id="fatal" class="fatal" hidden></div>
+  <!-- Prinsip -->
+  <section id="fitur" class="features" aria-label="Prinsip SAKSI">
+    <div class="container features-grid">
+      <article class="feature">
+        <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M24 4 40 10v12c0 11-7 19-16 22C15 41 8 33 8 22V10Z"/><path d="M19 17 17 31M27 17l-2 14M15 21h16M14 27h16"/></svg>
+        <h2>Integritas</h2>
+        <p>Hanya hash SHA-256 berkas yang disimpan. Satu karakter berubah, hash-nya berbeda total.</p>
+      </article>
+      <article class="feature">
+        <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M14 6v36"/><circle cx="14" cy="10" r="4"/><circle cx="14" cy="24" r="4"/><circle cx="14" cy="38" r="4"/><path d="M24 10h16M24 24h12M24 38h14"/></svg>
+        <h2>Jejak Serah-Terima</h2>
+        <p>Setiap aksi tercatat di riwayat append-only. Tidak ada yang bisa diedit atau dihapus.</p>
+      </article>
+      <article class="feature">
+        <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><circle cx="17" cy="16" r="6"/><path d="M6 38c0-7 5-12 11-12s11 5 11 12"/><circle cx="34" cy="26" r="5"/><path d="M34 31v11M34 36h5M34 40h4"/></svg>
+        <h2>Akses Berperan</h2>
+        <p>Admin, Penyidik, dan Kustodian. Hak setiap peran ditegakkan langsung oleh smart contract.</p>
+      </article>
+      <article class="feature">
+        <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="5"/><circle cx="36" cy="12" r="5"/><circle cx="12" cy="36" r="5"/><circle cx="36" cy="36" r="5"/><path d="M17 12h14M12 17v14M36 17v14M17 36h14M16 16l16 16M32 16 16 32"/></svg>
+        <h2>Permissioned</h2>
+        <p>Berjalan di jaringan Hyperledger Besu QBFT dengan validator yang dikenal.</p>
+      </article>
+    </div>
+  </section>
 
-  <main class="layout">
-    <section class="card roles">
-      <h2>1. Pilih peran</h2>
-      <p class="hint">Setiap peran memakai akun uji lokal. Ganti peran untuk mensimulasikan orang yang berbeda.</p>
-      <div id="role-list" class="role-list"></div>
-    </section>
+  <div id="fatal" class="fatal container" hidden></div>
 
-    <section class="card">
-      <h2>2. Daftarkan bukti baru</h2>
-      <p class="hint">Hanya <strong>Penyidik</strong> yang boleh mendaftarkan. Coba dengan peran lain untuk melihat penolakan.</p>
-      <form id="register-form" class="form">
-        <label>Nomor perkara
-          <input name="caseNumber" maxlength="64" placeholder="LP/123/XI/2026" required>
-        </label>
-        <label>Deskripsi
-          <input name="description" maxlength="256" placeholder="Citra disk laptop tersangka">
-        </label>
-        <label>Berkas bukti
-          <input name="file" type="file" required>
-        </label>
-        <div class="hash-line">SHA-256: <code id="register-hash">–</code></div>
-        <button type="submit" class="btn btn-primary">Daftarkan bukti</button>
-      </form>
-      <div class="samples">
-        <span class="hint">Belum punya berkas? </span>
-        <button type="button" id="sample-original" class="btn btn-small">Unduh berkas contoh</button>
-        <button type="button" id="sample-tampered" class="btn btn-small" disabled>Unduh versi yang diubah</button>
+  <!-- Simulasi -->
+  <main id="simulasi" class="simulation">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">Area Aplikasi</p>
+        <h2 class="section-title">Simulasi Serah-Terima</h2>
+        <p class="section-sub">Pilih peran, daftarkan bukti, lalu serahkan dari satu personel ke personel lain. Semua aksi dikirim sebagai transaksi ke smart contract.</p>
       </div>
-    </section>
 
-    <section class="card wide">
-      <div class="card-head">
-        <h2>3. Daftar bukti</h2>
-        <button type="button" id="refresh" class="btn btn-small">Muat ulang</button>
-      </div>
-      <div class="table-wrap">
-        <table class="evidence-table">
-          <thead>
-            <tr><th>#</th><th>Nomor perkara</th><th>Deskripsi</th><th>Pemegang</th><th>Status</th><th>Aksi untuk peran Anda</th></tr>
-          </thead>
-          <tbody id="evidence-body">
-            <tr><td colspan="6" class="empty">Belum ada bukti.</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+      <div class="grid">
+        <section id="peran" class="card" aria-labelledby="peran-title">
+          <p class="step">Langkah 1</p>
+          <h3 id="peran-title">Pilih peran</h3>
+          <p class="hint">Setiap peran memakai akun uji lokal. Ganti peran untuk mensimulasikan orang yang berbeda.</p>
+          <div id="role-list" class="role-list"></div>
+        </section>
 
-    <section class="card wide" id="detail" hidden>
-      <div class="card-head">
-        <h2>Riwayat bukti <span id="detail-id"></span></h2>
-        <button type="button" id="detail-close" class="btn btn-small">Tutup</button>
-      </div>
-      <div id="detail-info" class="detail-info"></div>
-      <div class="verify">
-        <label>Periksa keutuhan berkas
-          <input id="verify-file" type="file">
-        </label>
-        <div id="verify-result" class="verify-result"></div>
-      </div>
-      <ol id="timeline" class="timeline"></ol>
-    </section>
+        <section id="daftarkan" class="card" aria-labelledby="daftarkan-title">
+          <p class="step">Langkah 2</p>
+          <h3 id="daftarkan-title">Daftarkan bukti baru</h3>
+          <p class="hint">Hanya <strong>Penyidik</strong> yang boleh mendaftarkan. Coba dengan peran lain untuk melihat penolakan.</p>
+          <form id="register-form" class="form">
+            <label>Nomor perkara
+              <input name="caseNumber" maxlength="64" placeholder="LP/123/XI/2026" required>
+            </label>
+            <label>Deskripsi
+              <input name="description" maxlength="256" placeholder="Citra disk laptop tersangka">
+            </label>
+            <label>Berkas bukti
+              <input name="file" type="file" required>
+            </label>
+            <div class="hash-line">SHA-256: <code id="register-hash">–</code></div>
+            <button type="submit" class="btn btn-primary">Daftarkan bukti</button>
+          </form>
+          <div class="samples">
+            <span class="hint">Belum punya berkas?</span>
+            <div class="row">
+              <button type="button" id="sample-original" class="btn btn-small">Unduh berkas contoh</button>
+              <button type="button" id="sample-tampered" class="btn btn-small" disabled>Unduh versi yang diubah</button>
+            </div>
+          </div>
+        </section>
 
-    <section class="card">
-      <h2>Panel admin</h2>
-      <p class="hint">Hanya <strong>Admin</strong> yang boleh menjeda sistem. Saat dijeda, semua perubahan data ditolak.</p>
-      <div class="row">
-        <button type="button" id="pause" class="btn">Jeda sistem</button>
-        <button type="button" id="unpause" class="btn">Lanjutkan sistem</button>
-      </div>
-    </section>
+        <section id="bukti" class="card wide" aria-labelledby="bukti-title">
+          <div class="card-head">
+            <div>
+              <p class="step">Langkah 3</p>
+              <h3 id="bukti-title">Daftar bukti</h3>
+            </div>
+            <button type="button" id="refresh" class="btn btn-small">Muat ulang</button>
+          </div>
+          <div class="table-wrap">
+            <table class="evidence-table">
+              <thead>
+                <tr><th>#</th><th>Nomor perkara</th><th>Deskripsi</th><th>Pemegang</th><th>Status</th><th>Aksi untuk peran Anda</th></tr>
+              </thead>
+              <tbody id="evidence-body">
+                <tr><td colspan="6" class="empty">Belum ada bukti.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
 
-    <section class="card">
-      <h2>Log transaksi</h2>
-      <ul id="log" class="log"></ul>
-    </section>
+        <section class="card wide detail-card" id="detail" aria-labelledby="detail-title" hidden>
+          <div class="card-head">
+            <div>
+              <p class="step">Jejak Audit</p>
+              <h3 id="detail-title">Riwayat bukti <span id="detail-id"></span></h3>
+            </div>
+            <button type="button" id="detail-close" class="btn btn-small">Tutup</button>
+          </div>
+          <div class="detail-layout">
+            <div>
+              <dl id="detail-info" class="detail-info"></dl>
+              <div class="verify">
+                <label>Periksa keutuhan berkas
+                  <input id="verify-file" type="file">
+                </label>
+                <div id="verify-result" class="verify-result" aria-live="polite"></div>
+              </div>
+            </div>
+            <ol id="timeline" class="timeline"></ol>
+          </div>
+        </section>
+
+        <section id="admin" class="card" aria-labelledby="admin-title">
+          <p class="step">Panel Admin</p>
+          <h3 id="admin-title">Jeda darurat</h3>
+          <p class="hint">Hanya <strong>Admin</strong> yang boleh menjeda sistem. Saat dijeda, semua perubahan data ditolak.</p>
+          <div class="row">
+            <button type="button" id="pause" class="btn">Jeda sistem</button>
+            <button type="button" id="unpause" class="btn">Lanjutkan sistem</button>
+          </div>
+        </section>
+
+        <section id="log-panel" class="card" aria-labelledby="log-title">
+          <p class="step">Aktivitas</p>
+          <h3 id="log-title">Log transaksi</h3>
+          <ul id="log" class="log" aria-live="polite"></ul>
+        </section>
+      </div>
+    </div>
   </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <span class="logo logo-sm">SAKSI</span>
+      <p>Proyek kuliah: simulasi lokal pencatatan serah-terima bukti digital. Akun di halaman ini memakai kunci uji publik dan tidak boleh dipakai di jaringan sungguhan.</p>
+    </div>
+  </footer>
 
   <dialog id="action-dialog">
     <form method="dialog" id="action-form" class="form">

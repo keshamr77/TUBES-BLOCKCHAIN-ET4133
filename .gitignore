@@ -35,3 +35,6 @@ frontend/config.js
 # Milestone reports are kept on the local machine only
 docs/*Milestone*.md
 docs/LAPORAN-MILESTONE-*.md
+
+# Hero photo is used locally only (third-party image, not redistributed)
+frontend/assets/hero-timbangan.webp

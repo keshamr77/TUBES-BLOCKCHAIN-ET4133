@@ -329,6 +329,14 @@ async function actionClose(e) {
 // Tampilan
 // ---------------------------------------------------------------------------
 
+function setRole(key) {
+  if (key === state.current) return;
+  state.current = key;
+  renderRoles();
+  renderEvidence();
+  log(`Sekarang bertindak sebagai <strong>${esc(currentAccount().label)}</strong>.`);
+}
+
 function renderRoles() {
   const list = $("role-list");
   list.innerHTML = "";
@@ -336,16 +344,24 @@ function renderRoles() {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "role" + (acc.key === state.current ? " active" : "");
-    btn.innerHTML = `<span><strong>${esc(acc.label)}</strong><br><span class="addr">${esc(acc.address)}</span></span>` +
+    btn.setAttribute("aria-pressed", String(acc.key === state.current));
+    btn.innerHTML = `<span><strong>${esc(acc.label)}</strong><span class="addr">${esc(acc.address)}</span></span>` +
       `<span class="badge">${esc(acc.role)}</span>`;
-    btn.addEventListener("click", () => {
-      state.current = acc.key;
-      renderRoles();
-      renderEvidence();
-      log(`Sekarang bertindak sebagai <strong>${esc(acc.label)}</strong>.`);
-    });
+    btn.addEventListener("click", () => setRole(acc.key));
     list.append(btn);
   }
+  // Pemilih ringkas di navigasi selalu mengikuti peran aktif.
+  const select = $("role-select");
+  if (select.options.length !== cfg.accounts.length) {
+    select.innerHTML = "";
+    for (const acc of cfg.accounts) {
+      const o = document.createElement("option");
+      o.value = acc.key;
+      o.textContent = acc.label;
+      select.append(o);
+    }
+  }
+  select.value = state.current;
 }
 
 function actionButtons(e) {
@@ -375,9 +391,13 @@ function renderEvidence() {
     if (e.id === state.selectedId) tr.className = "selected";
     const statusIdx = Number(e.status);
     const pending = e.status === S_IN_TRANSFER ? `<br><span class="hint">→ ${esc(labelOf(e.pendingRecipient))}</span>` : "";
-    tr.innerHTML = `<td>${e.id}</td><td>${esc(e.caseNumber)}</td><td>${esc(e.description)}</td>` +
-      `<td>${esc(labelOf(e.holder))}</td>` +
-      `<td><span class="badge ${STATUS_CLASS[statusIdx]}">${STATUS[statusIdx]}</span>${pending}</td><td></td>`;
+    // data-label dipakai CSS untuk menampilkan tabel sebagai kartu di layar sempit.
+    tr.innerHTML = `<td data-label="#">${e.id}</td>` +
+      `<td data-label="Nomor perkara">${esc(e.caseNumber)}</td>` +
+      `<td data-label="Deskripsi">${esc(e.description) || "–"}</td>` +
+      `<td data-label="Pemegang">${esc(labelOf(e.holder))}</td>` +
+      `<td data-label="Status"><span><span class="badge ${STATUS_CLASS[statusIdx]}">${STATUS[statusIdx]}</span>${pending}</span></td>` +
+      `<td data-label="Aksi"></td>`;
     const cell = tr.lastElementChild;
     const wrap = document.createElement("div");
     wrap.className = "actions";
@@ -523,6 +543,13 @@ async function init() {
   for (const acc of cfg.accounts) state.wallets[acc.key] = new ethers.Wallet(acc.privateKey, state.provider);
 
   $("net-badge").textContent = `${cfg.network === "besu" ? "Besu QBFT" : "Anvil"} · chain ${cfg.chainId}`;
+  // Info top bar mengikuti jaringan yang sebenarnya terhubung.
+  if (cfg.network !== "besu") {
+    $("topbar-network").textContent = "Jaringan Anvil (pengembangan)";
+    $("topbar-validators").textContent = "1 Node lokal";
+    $("topbar-blocktime").textContent = "Blok instan";
+  }
+  $("role-select").addEventListener("change", (event) => setRole(event.target.value));
 
   try {
     const code = await state.provider.getCode(cfg.contractAddress);
