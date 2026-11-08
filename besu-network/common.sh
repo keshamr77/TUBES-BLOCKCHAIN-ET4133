@@ -3,7 +3,9 @@ NET_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export JAVA_HOME="$HOME/.local/opt/jdk-25"
 BESU_BIN="$HOME/.local/opt/besu-26.11.0/bin/besu"
 # WSL RAM is below 16 GB, so cap each node's heap at 1 GB.
-export BESU_OPTS="-Xmx1g"
+# preferIPv4Stack: Java otherwise binds RPC as [::ffff:127.0.0.1], which WSL does not
+# forward to Windows localhost, so a browser on Windows could not reach the node.
+export BESU_OPTS="-Xmx1g -Djava.net.preferIPv4Stack=true"
 
 NODES=(1 2 3 4)
 RPC_BASE=8545     # node N listens on RPC_BASE+N-1 (127.0.0.1 only)

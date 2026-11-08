@@ -1,75 +1,106 @@
 # SAKSI Contracts
 
-Smart contracts for **SAKSI** — a university project that records the chain of custody (serah-terima) of digital evidence on a permissioned blockchain, so every hand-over of an evidence item is traceable and tamper-evident.
+Smart contract untuk **SAKSI**, proyek kuliah yang mencatat serah-terima (*chain of custody*) bukti digital di blockchain *permissioned*. Setiap perpindahan bukti tercatat permanen, dan perubahan isi berkas bukti langsung terdeteksi.
 
-> **Status:** Milestone 1 (environment setup) complete. The SAKSI contracts themselves are not written yet; `test/Setup.t.sol` contains only a toolchain smoke test.
+> **Status:** Milestone 2 selesai — kontrak `SaksiRegistry`, pengujian lengkap, dan frontend simulasi.
 
-## Tech stack
+## Cara kerja singkat
 
-| Component | Version |
+1. **Penyidik** mendaftarkan bukti. Yang disimpan di blockchain hanya **hash SHA-256** berkas, bukan berkasnya.
+2. Pemegang bukti **memulai serah-terima** ke personel lain.
+3. Penerima **mengonfirmasi** dengan mengunggah berkas yang ia terima. Jika hash-nya berbeda dari yang terdaftar, smart contract **menolak** serah-terima (berkas telah diubah).
+4. Setiap aksi tercatat di **riwayat** yang tidak bisa diedit atau dihapus.
+
+| Peran | Hak |
+|---|---|
+| Admin | Memberi/mencabut peran, menjeda dan melanjutkan sistem |
+| Penyidik | Mendaftarkan bukti baru |
+| Kustodian | Menerima, menyimpan, dan menyerahkan bukti |
+
+Status bukti: `Disimpan → Dalam serah-terima → Disimpan … → Ditutup` (final). Desain lengkap ada di [`docs/DESAIN-MILESTONE-2.md`](docs/DESAIN-MILESTONE-2.md).
+
+## Teknologi
+
+| Komponen | Versi |
 |---|---|
 | Solidity | 0.8.28 (`evm_version = prague`) |
-| [Foundry](https://book.getfoundry.sh/) (forge, cast, anvil) | 1.9.0 |
-| [OpenZeppelin Contracts](https://github.com/OpenZeppelin/openzeppelin-contracts) | v5.7.0 |
-| [Slither](https://github.com/crytic/slither) | 0.11.6 (in `.venv`) |
-| [Hyperledger Besu](https://github.com/besu-eth/besu) | 26.11.0, QBFT, 4 validators |
-| Java (for Besu) | Temurin 25 LTS |
+| [Foundry](https://book.getfoundry.sh/) | 1.9.0 |
+| [OpenZeppelin Contracts](https://github.com/OpenZeppelin/openzeppelin-contracts) | v5.7.0 (AccessControl, Pausable) |
+| [Slither](https://github.com/crytic/slither) | 0.11.6 (di `.venv`) |
+| [Hyperledger Besu](https://github.com/besu-eth/besu) | 26.11.0, QBFT, 4 validator |
+| Frontend | HTML + JavaScript + [ethers.js](https://docs.ethers.org/v6/) 6.17.0 (disertakan di `frontend/vendor`) |
 
-## Repository layout
+## Struktur repositori
 
 ```
-src/                 Solidity contracts (SAKSI contracts go here)
-test/                Foundry tests (Setup.t.sol = toolchain smoke test)
-script/              Foundry deployment scripts
-lib/                 Dependencies as git submodules (forge-std, openzeppelin-contracts)
-besu-network/        Local 4-validator Besu QBFT network
-  qbftConfigFile.json  Input for key + genesis generation
-  genesis.json         Network genesis (chainId 1337, Prague, gasLimit 100M)
-  start.sh stop.sh reset.sh status.sh
-foundry.toml         Compiler, optimizer, fuzz and invariant settings
-remappings.txt       @openzeppelin/contracts/ and forge-std/ import paths
+src/SaksiRegistry.sol               Kontrak utama
+test/SaksiRegistry.t.sol            Uji unit dan fuzz (46 uji)
+test/SaksiRegistry.invariant.t.sol  Uji invariant (4 invariant)
+test/Setup.t.sol                    Uji asap toolchain (Milestone 1)
+script/Deploy.s.sol                 Deploy + pemberian peran
+scripts/deploy.sh                   Deploy ke anvil/Besu dan buat frontend/config.js
+scripts/serve-frontend.sh           Server web lokal untuk frontend
+frontend/                           Halaman simulasi
+besu-network/                       Jaringan Besu QBFT 4 validator
+docs/                               Desain, laporan milestone, panduan demo
 ```
 
-## Getting started
+## Persiapan setelah clone
 
-Requirements: Linux or WSL2 (Ubuntu 24.04 tested), git, curl, jq, build-essential, python3-venv.
+Kebutuhan: Linux atau WSL2 (diuji di Ubuntu 24.04), git, curl, jq, build-essential, python3-venv.
 
 ```bash
-git clone --recurse-submodules <repo-url> saksi-contracts
+git clone --recurse-submodules <url-repo> saksi-contracts
 cd saksi-contracts
-# if you cloned without --recurse-submodules:
-git submodule update --init --recursive
+git submodule update --init --recursive   # jika clone tanpa --recurse-submodules
 
-# Foundry
 curl -L https://foundry.paradigm.xyz | bash && foundryup
 forge build
-forge test -vv
+forge test
 ```
 
-### Slither
+## Perintah harian
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install slither-analyzer
-slither . --filter-paths "lib|test"
+forge test                        # semua uji
+forge test -vv --match-contract SaksiRegistryTest
+FOUNDRY_PROFILE=ci forge test     # fuzz 10.000 run, invariant lebih dalam
+forge coverage --no-match-coverage "test|script"
+forge test --gas-report
+source .venv/bin/activate && slither . --filter-paths "lib|test"
 ```
 
-## Common commands
+Hasil terakhir: **52 uji lulus**, **coverage 100%** (baris, statement, cabang, fungsi), **Slither 0 temuan**.
+
+## Menjalankan simulasi frontend
+
+### Pilihan A — Anvil (cepat, untuk latihan)
 
 ```bash
-forge test -vv                    # run tests
-FOUNDRY_PROFILE=ci forge test     # heavier fuzz (10k runs) and invariant runs
-forge coverage                    # coverage report
-forge test --gas-report           # gas usage per function
-forge fmt                         # format Solidity code
+anvil                         # terminal 1, biarkan berjalan
+scripts/deploy.sh anvil       # terminal 2
+scripts/serve-frontend.sh     # terminal 2
 ```
 
-## Local Besu QBFT network
+### Pilihan B — Besu QBFT (untuk demo)
 
-The scripts expect Java 25 at `~/.local/opt/jdk-25` and Besu at `~/.local/opt/besu-26.11.0` (paths are set in `besu-network/common.sh`).
+```bash
+besu-network/start.sh
+scripts/deploy.sh besu
+scripts/serve-frontend.sh
+```
 
-Validator keys are **not** committed. On a fresh clone, generate new ones from `besu-network/`:
+Lalu buka **http://localhost:5180** di browser Windows. Pakai `localhost`, bukan alamat IP, karena browser hanya mengizinkan perhitungan hash di alamat yang aman.
+
+Panduan demo langkah demi langkah: [`docs/PANDUAN-DEMO.md`](docs/PANDUAN-DEMO.md).
+
+> ⚠️ Akun di frontend memakai **kunci uji publik** (anvil dan tutorial Besu). `frontend/config.js` dibuat otomatis dan tidak di-commit. Jangan pernah memakai kunci ini di jaringan sungguhan.
+
+## Jaringan Besu QBFT
+
+Script membutuhkan Java 25 di `~/.local/opt/jdk-25` dan Besu di `~/.local/opt/besu-26.11.0` (diatur di `besu-network/common.sh`).
+
+Kunci validator **tidak** di-commit. Setelah clone, buat kunci baru dari folder `besu-network/`:
 
 ```bash
 cd besu-network
@@ -80,13 +111,11 @@ i=1; for d in networkFiles/keys/*/; do mkdir -p Node-$i; cp $d/key $d/key.pub No
 rm -rf networkFiles
 ```
 
-Then:
-
 ```bash
-besu-network/start.sh     # start all 4 validators (or: start.sh 3 4)
-besu-network/status.sh    # block number and peer count per node
-besu-network/stop.sh      # stop all (or: stop.sh 2) — by PID, never by name
-besu-network/reset.sh     # delete chain data only; keys and genesis are kept
+besu-network/start.sh     # jalankan 4 validator (atau: start.sh 3 4)
+besu-network/status.sh    # nomor blok dan jumlah peer tiap node
+besu-network/stop.sh      # hentikan semua (atau: stop.sh 2), berdasarkan PID
+besu-network/reset.sh     # hapus data rantai saja; kunci dan genesis tetap
 ```
 
 | Node | JSON-RPC | P2P |
@@ -96,25 +125,15 @@ besu-network/reset.sh     # delete chain data only; keys and genesis are kept
 | 3 | http://127.0.0.1:8547 | 30305 |
 | 4 | http://127.0.0.1:8548 | 30306 |
 
-Example deploy of the smoke contract:
+### Catatan desain jaringan
 
-```bash
-forge create test/Setup.t.sol:SmokeRegistry --rpc-url http://127.0.0.1:8545 \
-  --private-key 0x8f2a55949038a9610f50fb23b5883af3b4ecb3c3bb792cbcefbd1542c692be63 \
-  --broadcast --constructor-args 0xfe3b557e8fb62b89f4916b721be55ceb828dbd73
-```
+- **Milestone Prague, bukan Osaka:** solc 0.8.28 hanya mendukung EVM sampai Prague, jadi genesis memakai `pragueTime: 0` dan `foundry.toml` memakai `evm_version = "prague"` agar compiler dan jaringan identik.
+- **Gas limit** 100.000.000 agar kontrak besar bisa di-deploy (batas ukuran kode 24 KB dari EIP-170 tetap berlaku).
+- **Toleransi gangguan:** dengan 4 validator, QBFT tahan 1 node mati. Teruji: blok tetap bertambah dengan 3/4 node, berhenti dengan 2/4, dan pulih setelah node kembali.
+- Setiap node memakai `BESU_OPTS=-Xmx1g -Djava.net.preferIPv4Stack=true`. Opsi IPv4 diperlukan agar browser di Windows bisa menghubungi node di WSL.
 
-> ⚠️ The funded accounts in `qbftConfigFile.json` / `genesis.json` use **publicly known test keys** from the Besu tutorial. Use them only on this local network.
+## Milestone
 
-### Design notes
-
-- **Milestone Prague, not Osaka:** solc 0.8.28 supports EVM versions up to Prague, so the genesis uses `pragueTime: 0` and `foundry.toml` uses `evm_version = "prague"` to keep compiler and chain identical.
-- **Gas limit** is 100,000,000 so large contracts can be deployed (the 24 KB EIP-170 code size limit still applies).
-- **Fault tolerance:** with 4 validators QBFT tolerates 1 offline node. Tested: blocks continue with 3/4, halt with 2/4, and resume after the nodes return.
-- With less than 16 GB RAM, each node runs with `BESU_OPTS=-Xmx1g`.
-
-## Milestones
-
-- [x] **Milestone 1** — Development and test environment (Foundry, OpenZeppelin, Slither, Besu QBFT)
-- [ ] **Milestone 2** — SAKSI chain-of-custody contracts with unit, fuzz and invariant tests
-- [ ] **Milestone 3** — Deployment and demonstration on the Besu QBFT network
+- [x] **Milestone 1** — Lingkungan pengembangan dan pengujian
+- [x] **Milestone 2** — Kontrak SAKSI, pengujian, dan frontend simulasi
+- [ ] **Milestone 3** — Demo dan presentasi akhir
