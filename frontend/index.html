@@ -197,10 +197,12 @@
           <p class="step">Panel Admin</p>
           <h3 id="admin-title">Jeda darurat</h3>
           <p class="hint">Hanya <strong>Admin</strong> yang boleh menjeda sistem. Saat dijeda, semua perubahan data ditolak.</p>
+          <p class="system-status">Status sistem: <span id="system-status" class="badge">memuat…</span></p>
           <div class="row">
             <button type="button" id="pause" class="btn">Jeda sistem</button>
             <button type="button" id="unpause" class="btn">Lanjutkan sistem</button>
           </div>
+          <p id="admin-result" class="admin-result" role="status" hidden></p>
         </section>
 
         <section id="log-panel" class="card" aria-labelledby="log-title">

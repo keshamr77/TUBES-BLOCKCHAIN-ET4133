@@ -76,12 +76,15 @@ async function sha256File(file) {
   return "0x" + [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function log(message, kind = "") {
+function logItem(message, kind, time) {
   const li = document.createElement("li");
   if (kind) li.className = kind;
-  const time = new Date().toLocaleTimeString("id-ID");
   li.innerHTML = `<span class="time">${time}</span>${message}`;
-  $("log").prepend(li);
+  return li;
+}
+
+function log(message, kind = "") {
+  $("log").prepend(logItem(message, kind, new Date().toLocaleTimeString("id-ID")));
 }
 
 function showFatal(message) {
@@ -150,6 +153,13 @@ function explainError(err) {
   if (err && (err.code === "NETWORK_ERROR" || err.code === "SERVER_ERROR" || /fetch|ECONNREFUSED/i.test(err.message || ""))) {
     return "Tidak bisa menghubungi node blockchain. Pastikan jaringan (anvil/Besu) sedang berjalan.";
   }
+  // ethers reports node errors it cannot classify as "could not coalesce error"; the real
+  // reason is on err.error.
+  const rpcMessage = (err && err.code === "UNKNOWN_ERROR" && err.error && err.error.message) || "";
+  if ((err && err.code === "NONCE_EXPIRED") || /underpriced|nonce/i.test(rpcMessage)) {
+    return "Akun ini sedang dipakai mengirim transaksi lain (misalnya dari tab lain). Tunggu sebentar, lalu coba lagi.";
+  }
+  if (rpcMessage) return `Node menolak transaksi: ${esc(rpcMessage)}`;
   return esc((err && (err.shortMessage || err.message)) || String(err));
 }
 
@@ -157,10 +167,34 @@ function explainError(err) {
 // Transaksi
 // ---------------------------------------------------------------------------
 
+// Dua sesi dengan akun yang sama bisa menandatangani transaksi identik (nonce dan data sama).
+// Besu menolak salinan kedua dengan "Known transaction", padahal aksinya sedang diproses,
+// jadi tunggu transaksi yang sudah ada di antrean itu.
+async function submitTx(call, contract, nonce) {
+  try {
+    return await call(contract, { nonce });
+  } catch (err) {
+    const payload = err && err.payload;
+    const isKnown = payload && payload.method === "eth_sendRawTransaction" &&
+      err.error && /known transaction/i.test(err.error.message || "");
+    if (!isKnown) throw err;
+    const hash = ethers.keccak256(payload.params[0]);
+    return {
+      hash,
+      wait: async () => {
+        const receipt = await state.provider.waitForTransaction(hash);
+        if (receipt.status !== 1) throw new Error("Transaksi gagal dieksekusi oleh smart contract.");
+        return receipt;
+      },
+    };
+  }
+}
+
 async function sendTx(description, call) {
   if (state.busy) {
-    log("Tunggu transaksi sebelumnya selesai.", "err");
-    return false;
+    const message = "Tunggu transaksi sebelumnya selesai.";
+    log(message, "err");
+    return { ok: false, message };
   }
   state.busy = true;
   document.body.style.cursor = "progress";
@@ -172,15 +206,16 @@ async function sendTx(description, call) {
     // Raw RPC call bypasses ethers' short-lived request cache, which can return a stale
     // nonce when blocks are mined instantly (anvil).
     const nonce = Number(await state.provider.send("eth_getTransactionCount", [wallet.address, "pending"]));
-    const tx = await call(contract, { nonce });
+    const tx = await submitTx(call, contract, nonce);
     log(`Transaksi dikirim <code>${short(tx.hash)}</code>, menunggu blok…`);
     const receipt = await tx.wait();
     log(`✔ ${esc(description)} berhasil (blok ${receipt.blockNumber}).`, "ok");
-    return true;
+    return { ok: true, blockNumber: receipt.blockNumber };
   } catch (err) {
-    log(`✖ ${explainError(err)}`, "err");
+    const message = explainError(err);
+    log(`✖ ${message}`, "err");
     console.error(err);
-    return false;
+    return { ok: false, message };
   } finally {
     state.busy = false;
     document.body.style.cursor = "";
@@ -465,8 +500,12 @@ async function renderDetail() {
 async function refresh() {
   try {
     const [count, paused] = await Promise.all([state.reader.evidenceCount(), state.reader.paused()]);
+    // Konfirmasi lama tidak berlaku lagi kalau status berubah.
+    if (paused !== state.paused) $("admin-result").hidden = true;
     state.paused = paused;
     $("pause-badge").hidden = !paused;
+    $("system-status").textContent = paused ? "Dijeda" : "Aktif";
+    $("system-status").className = `badge ${paused ? "badge-warn" : "badge-ok"}`;
     const ids = Array.from({ length: Number(count) }, (_, i) => i + 1);
     const items = await Promise.all(ids.map((id) => state.reader.getEvidence(id)));
     state.evidence = items.map((e, i) => ({
@@ -494,6 +533,86 @@ async function updateBlock() {
     $("net-badge").className = "badge badge-err";
     $("block-number").textContent = "terputus";
   }
+}
+
+// ---------------------------------------------------------------------------
+// Riwayat aktivitas dari blockchain
+// ---------------------------------------------------------------------------
+
+const LOG_HISTORY_LIMIT = 30;
+// Besu membatasi rentang eth_getLogs (--rpc-max-logs-range, bawaan 5000 blok).
+const LOG_RANGE_BLOCKS = 2000;
+
+function describeEvent({ name, args: a }) {
+  const who = (addr) => `<strong>${esc(labelOf(addr))}</strong>`;
+  const note = a.note ? ` — “${esc(a.note)}”` : "";
+  switch (name) {
+    case "EvidenceRegistered":
+      return `${who(a.holder)} mendaftarkan bukti #${a.id} (perkara ${esc(a.caseNumber)}).`;
+    case "TransferInitiated":
+      return `${who(a.from)} menyerahkan bukti #${a.id} ke ${who(a.to)}${note}.`;
+    case "TransferAccepted":
+      return `${who(a.to)} menerima bukti #${a.id} dari ${who(a.from)}.`;
+    case "TransferRejected":
+      return `${who(a.by)} menolak bukti #${a.id} dari ${who(a.from)}${note}.`;
+    case "TransferCancelled":
+      return `${who(a.by)} membatalkan serah-terima bukti #${a.id}.`;
+    case "EvidenceClosed":
+      return `${who(a.by)} menutup bukti #${a.id}${note}.`;
+    case "Paused":
+      return `${who(a.account)} menjeda sistem.`;
+    case "Unpaused":
+      return `${who(a.account)} melanjutkan sistem.`;
+    default:
+      return null; // misalnya RoleGranted saat deploy
+  }
+}
+
+// Isi log dengan aktivitas terbaru di rantai, karena pesan sesi hilang saat halaman dimuat ulang.
+// Entri ditambahkan di bawah supaya tetap lebih lama daripada pesan sesi yang sudah tampil.
+async function loadLogHistory() {
+  const placeholder = logItem("Memuat aktivitas terbaru dari blockchain…", "", "");
+  $("log").append(placeholder);
+  try {
+    const floor = cfg.deployBlock ?? 0;
+    let to = await state.provider.getBlockNumber();
+    const entries = [];
+    while (to >= floor && entries.length < LOG_HISTORY_LIMIT) {
+      const from = Math.max(floor, to - LOG_RANGE_BLOCKS + 1);
+      const logs = await state.provider.getLogs({ address: cfg.contractAddress, fromBlock: from, toBlock: to });
+      for (const entry of logs.reverse()) {
+        const parsed = state.reader.interface.parseLog(entry);
+        const message = parsed && describeEvent(parsed);
+        if (message) entries.push({ message, blockNumber: entry.blockNumber, hash: entry.transactionHash });
+      }
+      to = from - 1;
+    }
+    const recent = entries.slice(0, LOG_HISTORY_LIMIT);
+    const numbers = [...new Set(recent.map((e) => e.blockNumber))];
+    const blocks = await Promise.all(numbers.map((n) => state.provider.getBlock(n)));
+    const timeOf = new Map(blocks.map((b) => [b.number, b.timestamp]));
+    placeholder.remove();
+    for (const e of recent) {
+      const detail = ` <span class="hint">blok ${e.blockNumber} · <code>${short(e.hash)}</code></span>`;
+      $("log").append(logItem(e.message + detail, "", formatTime(timeOf.get(e.blockNumber))));
+    }
+    if (recent.length === 0) $("log").append(logItem("Belum ada aktivitas tercatat di blockchain.", "", ""));
+  } catch (err) {
+    placeholder.remove();
+    $("log").append(logItem(`✖ Gagal memuat riwayat aktivitas: ${explainError(err)}`, "err", ""));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Admin
+// ---------------------------------------------------------------------------
+
+async function adminAction(description, call, successText) {
+  const result = await sendTx(description, call);
+  const box = $("admin-result");
+  box.className = `admin-result ${result.ok ? "ok" : "err"}`;
+  box.innerHTML = result.ok ? `✔ ${successText} (blok ${result.blockNumber}).` : `✖ ${result.message}`;
+  box.hidden = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -592,11 +711,11 @@ async function init() {
       log(`✖ ${esc(err.message)}`, "err");
       return;
     }
-    const ok = await sendTx(
+    const result = await sendTx(
       `mendaftarkan bukti perkara ${regForm.caseNumber.value.trim()}`,
       (c, o) => c.registerEvidence(regForm.caseNumber.value.trim(), regForm.description.value.trim(), hash, o),
     );
-    if (ok) {
+    if (result.ok) {
       regForm.reset();
       $("register-hash").textContent = "–";
     }
@@ -618,8 +737,8 @@ async function init() {
     event.target.value = "";
   });
 
-  $("pause").addEventListener("click", () => sendTx("menjeda sistem", (c, o) => c.pause(o)));
-  $("unpause").addEventListener("click", () => sendTx("melanjutkan sistem", (c, o) => c.unpause(o)));
+  $("pause").addEventListener("click", () => adminAction("menjeda sistem", (c, o) => c.pause(o), "Sistem berhasil dijeda"));
+  $("unpause").addEventListener("click", () => adminAction("melanjutkan sistem", (c, o) => c.unpause(o), "Sistem aktif kembali"));
 
   $("sample-original").addEventListener("click", () => {
     state.sample = makeSample();
@@ -634,6 +753,7 @@ async function init() {
   });
 
   log(`Terhubung ke ${esc(cfg.network)} (${esc(cfg.rpcUrl)}), kontrak <code>${short(cfg.contractAddress)}</code>.`, "ok");
+  loadLogHistory();
 }
 
 init();
