@@ -6,6 +6,9 @@
 # Semua kunci privat di bawah ini adalah kunci uji PUBLIK (anvil dan tutorial Besu).
 # Jangan pernah dipakai di jaringan sungguhan.
 set -euo pipefail
+
+# Akun uji tanpa peran (anvil #4), untuk mendemokan penolakan akses.
+OUTSIDER_KEY=0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a
 cd "$(dirname "$0")/.."
 export PATH="$HOME/.foundry/bin:$PATH"
 
@@ -42,6 +45,7 @@ export ADMIN_PRIVATE_KEY="$ADMIN_KEY" FUND_WEI
 export INVESTIGATOR=$(cast wallet address "$INVESTIGATOR_KEY")
 export CUSTODIAN_A=$(cast wallet address "$CUSTODIAN_A_KEY")
 export CUSTODIAN_B=$(cast wallet address "$CUSTODIAN_B_KEY")
+export OUTSIDER=$(cast wallet address "$OUTSIDER_KEY")
 
 echo "Deploy ke $NETWORK ($RPC_URL, chainId $CHAIN_ID)..."
 forge script script/Deploy.s.sol:Deploy --rpc-url "$RPC_URL" --broadcast --slow -q
@@ -65,7 +69,8 @@ window.SAKSI_CONFIG = {
     { key: "admin", label: "Admin", role: "Admin", address: "$ADMIN", privateKey: "$ADMIN_KEY" },
     { key: "investigator", label: "Penyidik", role: "Penyidik", address: "$INVESTIGATOR", privateKey: "$INVESTIGATOR_KEY" },
     { key: "custodianA", label: "Kustodian A (Gudang Bukti)", role: "Kustodian", address: "$CUSTODIAN_A", privateKey: "$CUSTODIAN_A_KEY" },
-    { key: "custodianB", label: "Kustodian B (Lab Forensik)", role: "Kustodian", address: "$CUSTODIAN_B", privateKey: "$CUSTODIAN_B_KEY" }
+    { key: "custodianB", label: "Kustodian B (Lab Forensik)", role: "Kustodian", address: "$CUSTODIAN_B", privateKey: "$CUSTODIAN_B_KEY" },
+    { key: "outsider", label: "Tamu (tanpa peran)", role: "Tanpa peran", address: "$OUTSIDER", privateKey: "$OUTSIDER_KEY" }
   ],
   abi: $ABI
 };
@@ -75,4 +80,5 @@ echo "SaksiRegistry : $ADDRESS (blok $DEPLOY_BLOCK)"
 echo "Penyidik      : $INVESTIGATOR"
 echo "Kustodian A   : $CUSTODIAN_A"
 echo "Kustodian B   : $CUSTODIAN_B"
+echo "Tanpa peran   : $OUTSIDER"
 echo "frontend/config.js diperbarui. Buka frontend dengan: scripts/serve-frontend.sh"

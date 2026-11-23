@@ -10,6 +10,7 @@ import {SaksiRegistry} from "../src/SaksiRegistry.sol";
 ///      INVESTIGATOR       alamat penyidik
 ///      CUSTODIAN_A        alamat kustodian A
 ///      CUSTODIAN_B        alamat kustodian B
+///      OUTSIDER           (opsional) akun uji tanpa peran; hanya diberi saldo
 ///      FUND_WEI           (opsional) isi saldo akun yang saldonya di bawah nilai ini
 contract Deploy is Script {
     function run() external returns (SaksiRegistry reg) {
@@ -18,6 +19,7 @@ contract Deploy is Script {
         address investigator = vm.envAddress("INVESTIGATOR");
         address custodianA = vm.envAddress("CUSTODIAN_A");
         address custodianB = vm.envAddress("CUSTODIAN_B");
+        address outsider = vm.envOr("OUTSIDER", address(0));
         uint256 fundWei = vm.envOr("FUND_WEI", uint256(0));
 
         vm.startBroadcast(adminKey);
@@ -27,10 +29,10 @@ contract Deploy is Script {
         reg.grantRole(reg.CUSTODIAN_ROLE(), custodianB);
 
         if (fundWei > 0) {
-            address[3] memory personnel = [investigator, custodianA, custodianB];
-            for (uint256 i; i < personnel.length; i++) {
-                if (personnel[i].balance < fundWei) {
-                    (bool ok,) = payable(personnel[i]).call{value: fundWei}("");
+            address[4] memory accounts = [investigator, custodianA, custodianB, outsider];
+            for (uint256 i; i < accounts.length; i++) {
+                if (accounts[i] != address(0) && accounts[i].balance < fundWei) {
+                    (bool ok,) = payable(accounts[i]).call{value: fundWei}("");
                     require(ok, "funding failed");
                 }
             }

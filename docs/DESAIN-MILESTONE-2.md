@@ -1,5 +1,7 @@
 # Desain Milestone 2 — Kontrak SAKSI
 
+> **Catatan Milestone 3:** dokumen ini menggambarkan desain MVP (tag `mvp-16nov`). Sejak Milestone 3, `caseNumber`/`description` diganti `caseRef`/`metadataHash` (bytes32) dan `HashMismatch` tidak lagi me-revert, melainkan dicatat sebagai `DiscrepancyRecorded`. Lihat [`PERUBAHAN-DARI-UTS.md`](PERUBAHAN-DARI-UTS.md).
+
 Dokumen ini menjelaskan desain kontrak `SaksiRegistry` untuk pencatatan serah-terima (chain of custody) bukti digital. Sesuai arahan dosen, desain dibuat **sederhana**: satu kontrak, tiga peran, dan satu alur serah-terima dua langkah.
 
 ## 1. Prinsip desain

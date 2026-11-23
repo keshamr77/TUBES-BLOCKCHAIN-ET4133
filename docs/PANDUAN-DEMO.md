@@ -1,6 +1,6 @@
 # Panduan Demo SAKSI
 
-Skenario presentasi sekitar 10 menit. Semua langkah dijalankan di terminal **Ubuntu 24.04** dan browser Windows.
+Skenario presentasi sekitar 12 menit. Semua langkah dijalankan di terminal **Ubuntu 24.04** dan browser Windows. Versi ini memakai kontrak Milestone 3: ketidakcocokan hash **dicatat** di blockchain (tidak lagi ditolak diam-diam), dan nomor perkara hanya disimpan sebagai hash.
 
 ## Persiapan (sebelum presentasi)
 
@@ -16,23 +16,36 @@ Buka **http://localhost:5180** di browser. Pastikan di kanan atas muncul `Besu Q
 
 Klik **Unduh berkas contoh**, lalu **Unduh versi yang diubah**. Kedua berkas tersimpan di folder Downloads. Isinya sama, kecuali nominal transfer (Rp 25.000.000 diubah menjadi Rp 95.000.000).
 
+Siapkan juga **jendela browser kedua** (profil lain atau jendela samaran) yang membuka alamat yang sama, untuk langkah 2.
+
 > Jika ingin latihan tanpa Besu, ganti dua perintah pertama dengan `anvil` (di terminal terpisah) dan `scripts/deploy.sh anvil`.
 
 ## Skenario
 
 ### 1. Kontrol akses (± 1 menit)
-1. Pilih peran **Kustodian A**.
+1. Pilih peran **Tamu (tanpa peran)**.
 2. Isi nomor perkara `LP/123/XI/2026`, deskripsi, pilih berkas contoh, klik **Daftarkan bukti**.
-3. Log menampilkan: *Ditolak: akun ini tidak memiliki peran Penyidik yang dibutuhkan.*
+3. Log menampilkan: *Ditolak: akun ini tidak memiliki peran Penyidik yang dibutuhkan.* Tidak ada transaksi yang masuk blok.
 
 **Poin:** hanya penyidik yang boleh mendaftarkan bukti, dan aturan ini ditegakkan oleh smart contract, bukan oleh aplikasi.
 
-### 2. Pendaftaran bukti (± 1 menit)
-1. Pilih peran **Penyidik**, daftarkan berkas contoh yang sama.
-2. Tunjukkan hash SHA-256 yang muncul sebelum dikirim. Berkas tidak dikirim ke mana pun, hanya hash-nya.
-3. Bukti #1 muncul di tabel dengan status **Disimpan** dan pemegang **Penyidik**.
+### 2. Pendaftaran bukti dan privasi data perkara (± 2 menit)
+1. Pilih peran **Penyidik**. Saat mengetik nomor perkara, tunjukkan baris **Ref. perkara (keccak256)** yang berubah setiap ketikan.
+2. Pilih berkas contoh. Hash SHA-256 muncul sebelum dikirim; berkasnya tidak dikirim ke mana pun.
+3. Klik **Daftarkan bukti**. Log menyebut bahwa di blockchain hanya tercatat ref. perkara.
+4. Di tabel, nomor perkara dan deskripsi tampil dengan label *tersimpan lokal di browser ini*.
+5. Pindah ke **jendela browser kedua** dan muat ulang. Kolom yang sama hanya menampilkan **hash on-chain**.
 
-### 3. Serah-terima normal (± 2 menit)
+**Poin:** nomor perkara dan deskripsi tidak pernah ditulis ke blockchain sebagai teks. Siapa pun yang membaca rantai hanya melihat hash.
+
+### 3. Cocokkan nomor perkara (± 1 menit)
+1. Klik **Riwayat** pada bukti #1.
+2. Di **Cocokkan nomor perkara**, ketik `lp/123/xi/2026` (huruf kecil). Hasil: **COCOK**, karena nomor dinormalisasi (spasi di ujung dibuang, huruf besar).
+3. Ketik `LP/124/XI/2026`. Hasil: **TIDAK COCOK**, beserta hash yang berbeda.
+
+**Poin:** penyidik yang tahu nomor perkaranya bisa membuktikan keterkaitan bukti dengan perkara tanpa nomor itu disimpan terbuka.
+
+### 4. Serah-terima normal (± 2 menit)
 1. Sebagai **Penyidik**, klik **Serahkan** → penerima **Kustodian A**, catatan `Dikirim ke gudang bukti`.
 2. Status menjadi **Dalam serah-terima**. Pemegang masih Penyidik, karena penerima belum mengonfirmasi.
 3. Pilih peran **Kustodian A**, klik **Terima**, unggah **berkas contoh asli**.
@@ -40,30 +53,33 @@ Klik **Unduh berkas contoh**, lalu **Unduh versi yang diubah**. Kedua berkas ter
 
 **Poin:** serah-terima butuh persetujuan dua pihak, seperti berita acara yang ditandatangani kedua belah pihak.
 
-### 4. Deteksi perubahan berkas (± 2 menit) — bagian utama
+### 5. Berkas diubah: tercatat, bukan ditolak diam-diam (± 2 menit), bagian utama
 1. Sebagai **Kustodian A**, serahkan bukti ke **Kustodian B** (`Dikirim ke lab forensik`).
 2. Pilih **Kustodian B**, klik **Terima**, unggah **berkas versi yang diubah**.
-3. Log menampilkan: *Hash berkas TIDAK COCOK … serah-terima ditolak oleh smart contract.*
-4. Bukti tetap dipegang Kustodian A.
+3. Muncul dialog **Hash berkas tidak cocok**. Jelaskan bahwa transaksi tetap akan dikirim agar upaya ini tercatat. Klik **Kirim & catat**.
+4. Log menampilkan: *⚠ Hash tidak cocok, tercatat di blok N*, beserta hash terdaftar dan hash yang diserahkan.
+5. Bukti tetap dipegang **Kustodian A**, status kembali **Disimpan**, dan muncul badge **⚠ 1× hash tidak cocok**.
+6. Klik **Riwayat**: ada entri merah *Hash tidak cocok, tercatat* atas nama Kustodian B, berisi hash berkas yang ia serahkan.
 
-**Poin:** perubahan satu angka saja menghasilkan hash yang sama sekali berbeda, sehingga manipulasi bukti langsung ketahuan saat serah-terima.
+**Poin:** di versi MVP, smart contract me-revert transaksi ini sehingga tidak ada jejak sama sekali. Sekarang upaya serah-terima dengan berkas yang diubah menjadi bagian permanen dari jejak audit, dan bukti diberi tanda yang tidak bisa dihapus.
 
-### 5. Penolakan dan penyelesaian (± 1 menit)
-1. Masih sebagai **Kustodian B**, klik **Tolak** dengan alasan `Berkas tidak sesuai`.
-2. Sebagai **Kustodian A**, serahkan lagi ke Kustodian B. Sebagai **Kustodian B**, terima dengan **berkas asli**.
+### 6. Penyelesaian (± 1 menit)
+1. Sebagai **Kustodian A**, serahkan lagi ke Kustodian B. Sebagai **Kustodian B**, terima dengan **berkas asli**. Pemegang berpindah; badge ketidakcocokan **tetap** ada.
+2. (Opsional) Tunjukkan **Tolak**: serahkan sekali lagi lalu tolak dengan alasan `Berkas tidak sesuai`.
 3. Klik **Tutup** dengan catatan `Analisis selesai`. Status menjadi **Ditutup** dan tidak ada lagi tombol aksi.
 
-### 6. Jejak audit (± 1 menit)
-1. Klik **Riwayat** pada bukti #1. Lini masa menampilkan setiap aksi: siapa, kapan, dan catatannya, termasuk penolakan.
-2. Pada **Periksa keutuhan berkas**, unggah berkas asli (**COCOK**), lalu versi yang diubah (**TIDAK COCOK**).
+### 7. Jejak audit (± 1 menit)
+1. Lini masa **Riwayat** menampilkan setiap aksi: siapa, kapan, dan catatannya, termasuk ketidakcocokan dan penolakan.
+2. Pada **Periksa keutuhan berkas**, unggah berkas asli (**COCOK**), lalu versi yang diubah (**TIDAK COCOK**). Pemeriksaan ini hanya membaca, tidak mencatat apa pun.
+3. Muat ulang halaman: **Log aktivitas** dibaca ulang dari event blockchain, termasuk entri ketidakcocokan berwarna kuning.
 
-### 7. Jeda darurat (± 1 menit)
+### 8. Jeda darurat (± 1 menit)
 1. Sebagai **Penyidik**, klik **Jeda sistem**: ditolak, karena bukan admin.
 2. Pilih **Admin**, klik **Jeda sistem**. Muncul label **SISTEM DIJEDA**.
 3. Coba daftarkan bukti sebagai Penyidik: ditolak karena sistem dijeda.
 4. Sebagai **Admin**, klik **Lanjutkan sistem**.
 
-### 8. Ketahanan jaringan (opsional, ± 2 menit)
+### 9. Ketahanan jaringan (opsional, ± 2 menit)
 Di terminal lain:
 ```bash
 besu-network/stop.sh 4      # 3 dari 4 validator: blok tetap bertambah, frontend tetap bisa dipakai
@@ -88,3 +104,4 @@ besu-network/reset.sh       # opsional: mulai dari blok 0 lagi (deploy ulang set
 | Halaman tidak terbuka | Port mungkin dipakai program Windows. Jalankan `scripts/serve-frontend.sh 8090` dan buka `http://localhost:8090`. |
 | "Browser tidak mengizinkan perhitungan hash" | Buka lewat `http://localhost:…`, bukan alamat IP. |
 | "Berkas ini sudah terdaftar" | Setiap berkas hanya boleh didaftarkan sekali. Klik **Unduh berkas contoh** lagi untuk berkas baru. |
+| Nomor perkara tampil sebagai hash di browser sendiri | Data lokal browser terhapus, atau bukti didaftarkan dari browser lain. Ini perilaku yang diharapkan; gunakan **Cocokkan nomor perkara**. |

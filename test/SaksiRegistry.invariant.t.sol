@@ -16,8 +16,11 @@ contract SaksiHandler is Test {
     mapping(uint256 id => bool) public ghostClosed;
     mapping(uint256 id => address) public ghostHolderAtClose;
     mapping(uint256 id => uint256) public ghostHistoryAtClose;
+    mapping(uint256 id => uint256) public ghostDiscrepancies;
 
     bool public historyShrank;
+    /// Diset jika ketidakcocokan hash pernah memindahkan pemegang atau tidak menambah counter.
+    bool public discrepancyMovedCustody;
 
     uint256 internal nonce;
 
@@ -50,7 +53,7 @@ contract SaksiHandler is Test {
         address actor = _actor(actorSeed);
         bytes32 h = keccak256(abi.encode("berkas", nonce++));
         vm.prank(actor);
-        try reg.registerEvidence("LP/INV/2026", "bukti uji", h) returns (uint256 id) {
+        try reg.registerEvidence(keccak256("LP/INV/2026"), keccak256("bukti uji"), h) returns (uint256 id) {
             ghostRegistered++;
             ghostHash[id] = h;
         } catch {}
@@ -65,8 +68,18 @@ contract SaksiHandler is Test {
     function accept(uint256 actorSeed, uint256 idSeed, bool useCorrectHash) external tracksHistory(idSeed) {
         uint256 id = _existingId(idSeed);
         bytes32 h = useCorrectHash ? ghostHash[id] : keccak256("salah");
+        address holderBefore = id <= reg.evidenceCount() ? reg.getEvidence(id).holder : address(0);
+        uint256 countBefore = id <= reg.evidenceCount() ? reg.getEvidence(id).discrepancyCount : 0;
         vm.prank(_actor(actorSeed));
-        try reg.acceptTransfer(id, h) {} catch {}
+        try reg.acceptTransfer(id, h) returns (bool accepted) {
+            if (!accepted) {
+                ghostDiscrepancies[id]++;
+                SaksiRegistry.Evidence memory e = reg.getEvidence(id);
+                if (e.holder != holderBefore || e.discrepancyCount != countBefore + 1) {
+                    discrepancyMovedCustody = true;
+                }
+            }
+        } catch {}
     }
 
     function reject(uint256 actorSeed, uint256 idSeed) external tracksHistory(idSeed) {
@@ -124,6 +137,22 @@ contract SaksiRegistryInvariantTest is Test {
         selectors[4] = SaksiHandler.cancel.selector;
         selectors[5] = SaksiHandler.close.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
+    }
+
+    /// discrepancyCount sama dengan jumlah record DiscrepancyRecorded di riwayat
+    /// dan jumlah ketidakcocokan yang diamati handler; ketidakcocokan tidak memindahkan bukti.
+    function invariant_DiscrepancyCountMatchesHistory() public view {
+        assertFalse(handler.discrepancyMovedCustody());
+        for (uint256 id = 1; id <= reg.evidenceCount(); id++) {
+            SaksiRegistry.CustodyRecord[] memory h = reg.getHistory(id);
+            uint256 recorded;
+            for (uint256 i; i < h.length; i++) {
+                if (h[i].action == SaksiRegistry.Action.DiscrepancyRecorded) recorded++;
+            }
+            uint256 count = reg.getEvidence(id).discrepancyCount;
+            assertEq(count, recorded);
+            assertEq(count, handler.ghostDiscrepancies(id));
+        }
     }
 
     /// Jumlah bukti sama dengan jumlah pendaftaran yang berhasil.

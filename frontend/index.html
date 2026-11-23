@@ -86,7 +86,7 @@
       <article class="feature">
         <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M24 4 40 10v12c0 11-7 19-16 22C15 41 8 33 8 22V10Z"/><path d="M19 17 17 31M27 17l-2 14M15 21h16M14 27h16"/></svg>
         <h2>Integritas</h2>
-        <p>Hanya hash SHA-256 berkas yang disimpan. Satu karakter berubah, hash-nya berbeda total.</p>
+        <p>Hanya hash yang disimpan: hash SHA-256 berkas dan hash nomor perkara. Satu karakter berubah, hash-nya berbeda total.</p>
       </article>
       <article class="feature">
         <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M14 6v36"/><circle cx="14" cy="10" r="4"/><circle cx="14" cy="24" r="4"/><circle cx="14" cy="38" r="4"/><path d="M24 10h16M24 24h12M24 38h14"/></svg>
@@ -129,10 +129,12 @@
           <p class="step">Langkah 2</p>
           <h3 id="daftarkan-title">Daftarkan bukti baru</h3>
           <p class="hint">Hanya <strong>Penyidik</strong> yang boleh mendaftarkan. Coba dengan peran lain untuk melihat penolakan.</p>
+          <p class="hint">Nomor perkara dan deskripsi <strong>tidak dikirim</strong> ke blockchain. Yang dicatat hanya hash keccak256-nya; teks aslinya disimpan lokal di browser ini.</p>
           <form id="register-form" class="form">
             <label>Nomor perkara
-              <input name="caseNumber" maxlength="64" placeholder="LP/123/XI/2026" required>
+              <input name="caseNumber" maxlength="64" placeholder="LP/123/XI/2026" autocomplete="off" required>
             </label>
+            <div class="hash-line">Ref. perkara (keccak256): <code id="register-caseref">–</code></div>
             <label>Deskripsi
               <input name="description" maxlength="256" placeholder="Citra disk laptop tersangka">
             </label>
@@ -188,6 +190,15 @@
                 </label>
                 <div id="verify-result" class="verify-result" aria-live="polite"></div>
               </div>
+              <form id="case-check" class="verify case-check">
+                <label for="case-check-input">Cocokkan nomor perkara</label>
+                <p class="hint">Ketik nomor perkara. Browser menghitung hash-nya dan membandingkan dengan ref. perkara on-chain.</p>
+                <div class="case-check-row">
+                  <input id="case-check-input" maxlength="64" placeholder="LP/123/XI/2026" autocomplete="off">
+                  <button type="submit" class="btn btn-small">Cocokkan</button>
+                </div>
+                <div id="case-check-result" class="verify-result" aria-live="polite"></div>
+              </form>
             </div>
             <ol id="timeline" class="timeline"></ol>
           </div>

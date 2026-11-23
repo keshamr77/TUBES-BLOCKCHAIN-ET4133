@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, Vm} from "forge-std/Test.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {SaksiRegistry} from "../src/SaksiRegistry.sol";
@@ -19,8 +19,9 @@ contract SaksiRegistryTest is Test {
     // immutable, not constant: sha256 is a precompile call and would consume vm.prank
     bytes32 internal immutable FILE_HASH = sha256("isi berkas bukti asli");
     bytes32 internal immutable TAMPERED_HASH = sha256("isi berkas bukti yang diubah");
-    string internal constant CASE_NO = "LP/123/XI/2026";
-    string internal constant DESC = "Citra disk laptop tersangka";
+    // Frontend menormalisasi nomor perkara (trim + huruf besar) lalu menghitung keccak256.
+    bytes32 internal constant CASE_REF = keccak256("LP/123/XI/2026");
+    bytes32 internal constant META_HASH = keccak256("Citra disk laptop tersangka");
 
     function setUp() public {
         reg = new SaksiRegistry(admin);
@@ -35,7 +36,7 @@ contract SaksiRegistryTest is Test {
 
     function _register() internal returns (uint256 id) {
         vm.prank(investigator);
-        id = reg.registerEvidence(CASE_NO, DESC, FILE_HASH);
+        id = reg.registerEvidence(CASE_REF, META_HASH, FILE_HASH);
     }
 
     function _registerAndInitiate() internal returns (uint256 id) {
@@ -96,7 +97,7 @@ contract SaksiRegistryTest is Test {
 
     function test_Register_StoresEvidence() public {
         vm.expectEmit(true, true, true, true, address(reg));
-        emit SaksiRegistry.EvidenceRegistered(1, investigator, FILE_HASH, CASE_NO);
+        emit SaksiRegistry.EvidenceRegistered(1, investigator, CASE_REF, FILE_HASH, META_HASH);
         uint256 id = _register();
 
         assertEq(id, 1);
@@ -104,13 +105,14 @@ contract SaksiRegistryTest is Test {
         assertEq(reg.evidenceIdByHash(FILE_HASH), 1);
 
         SaksiRegistry.Evidence memory e = reg.getEvidence(id);
-        assertEq(e.caseNumber, CASE_NO);
-        assertEq(e.description, DESC);
+        assertEq(e.caseRef, CASE_REF);
+        assertEq(e.metadataHash, META_HASH);
         assertEq(e.fileHash, FILE_HASH);
         assertEq(e.holder, investigator);
         assertEq(e.pendingRecipient, address(0));
         assertEq(uint8(e.status), uint8(SaksiRegistry.Status.Stored));
         assertEq(e.registeredAt, block.timestamp);
+        assertEq(e.discrepancyCount, 0);
 
         SaksiRegistry.CustodyRecord[] memory h = reg.getHistory(id);
         assertEq(h.length, 1);
@@ -125,7 +127,7 @@ contract SaksiRegistryTest is Test {
             )
         );
         vm.prank(custodianA);
-        reg.registerEvidence(CASE_NO, DESC, FILE_HASH);
+        reg.registerEvidence(CASE_REF, META_HASH, FILE_HASH);
     }
 
     function test_RevertWhen_RegisterByOutsider() public {
@@ -135,40 +137,45 @@ contract SaksiRegistryTest is Test {
             )
         );
         vm.prank(outsider);
-        reg.registerEvidence(CASE_NO, DESC, FILE_HASH);
+        reg.registerEvidence(CASE_REF, META_HASH, FILE_HASH);
     }
 
     function test_RevertWhen_RegisterZeroHash() public {
         vm.expectRevert(SaksiRegistry.EmptyField.selector);
         vm.prank(investigator);
-        reg.registerEvidence(CASE_NO, DESC, bytes32(0));
+        reg.registerEvidence(CASE_REF, META_HASH, bytes32(0));
     }
 
-    function test_RevertWhen_RegisterEmptyCaseNumber() public {
+    function test_RevertWhen_RegisterZeroCaseRef() public {
         vm.expectRevert(SaksiRegistry.EmptyField.selector);
         vm.prank(investigator);
-        reg.registerEvidence("", DESC, FILE_HASH);
+        reg.registerEvidence(bytes32(0), META_HASH, FILE_HASH);
     }
 
-    function test_RevertWhen_RegisterCaseNumberTooLong() public {
-        string memory longCase = string(new bytes(65));
-        vm.expectRevert(abi.encodeWithSelector(SaksiRegistry.FieldTooLong.selector, 65, 64));
+    function test_Register_AllowsEmptyMetadata() public {
         vm.prank(investigator);
-        reg.registerEvidence(longCase, DESC, FILE_HASH);
+        uint256 id = reg.registerEvidence(CASE_REF, bytes32(0), FILE_HASH);
+        assertEq(reg.getEvidence(id).metadataHash, bytes32(0));
     }
 
-    function test_RevertWhen_RegisterDescriptionTooLong() public {
-        string memory longDesc = string(new bytes(257));
-        vm.expectRevert(abi.encodeWithSelector(SaksiRegistry.FieldTooLong.selector, 257, 256));
-        vm.prank(investigator);
-        reg.registerEvidence(CASE_NO, longDesc, FILE_HASH);
+    /// Data perkara tidak tersimpan sebagai teks: event hanya memuat hash,
+    /// dan caseRef menjadi topic sehingga bisa difilter per perkara.
+    function test_Register_EventCarriesOnlyHashes() public {
+        vm.recordLogs();
+        _register();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(logs.length, 1);
+        assertEq(logs[0].topics.length, 4);
+        assertEq(logs[0].topics[0], SaksiRegistry.EvidenceRegistered.selector);
+        assertEq(logs[0].topics[3], CASE_REF);
+        assertEq(logs[0].data, abi.encode(FILE_HASH, META_HASH));
     }
 
     function test_RevertWhen_RegisterDuplicateHash() public {
         _register();
         vm.expectRevert(abi.encodeWithSelector(SaksiRegistry.DuplicateEvidence.selector, FILE_HASH, 1));
         vm.prank(investigator);
-        reg.registerEvidence("LP/999/XI/2026", "Salinan", FILE_HASH);
+        reg.registerEvidence(keccak256("LP/999/XI/2026"), keccak256("Salinan"), FILE_HASH);
     }
 
     function test_RevertWhen_RegisterWhilePaused() public {
@@ -176,7 +183,7 @@ contract SaksiRegistryTest is Test {
         reg.pause();
         vm.expectRevert(Pausable.EnforcedPause.selector);
         vm.prank(investigator);
-        reg.registerEvidence(CASE_NO, DESC, FILE_HASH);
+        reg.registerEvidence(CASE_REF, META_HASH, FILE_HASH);
     }
 
     // --- initiateTransfer ---------------------------------------------------
@@ -271,10 +278,11 @@ contract SaksiRegistryTest is Test {
         vm.expectEmit(true, true, true, true, address(reg));
         emit SaksiRegistry.TransferAccepted(id, investigator, custodianA);
         vm.prank(custodianA);
-        reg.acceptTransfer(id, FILE_HASH);
+        assertTrue(reg.acceptTransfer(id, FILE_HASH));
 
         SaksiRegistry.Evidence memory e = reg.getEvidence(id);
         assertEq(e.holder, custodianA);
+        assertEq(e.discrepancyCount, 0);
         assertEq(e.pendingRecipient, address(0));
         assertEq(uint8(e.status), uint8(SaksiRegistry.Status.Stored));
 
@@ -285,12 +293,100 @@ contract SaksiRegistryTest is Test {
         assertEq(h[2].counterparty, investigator);
     }
 
-    function test_RevertWhen_AcceptWithTamperedFile() public {
+    function test_Accept_TamperedFileRecordsDiscrepancy() public {
         uint256 id = _registerAndInitiate();
-        vm.expectRevert(abi.encodeWithSelector(SaksiRegistry.HashMismatch.selector, id, FILE_HASH, TAMPERED_HASH));
+        vm.expectEmit(true, true, false, true, address(reg));
+        emit SaksiRegistry.DiscrepancyRecorded(id, custodianA, FILE_HASH, TAMPERED_HASH);
+        vm.prank(custodianA);
+        bool accepted = reg.acceptTransfer(id, TAMPERED_HASH);
+        assertFalse(accepted);
+
+        // Serah-terima batal, bukti tetap pada pengirim, tanda permanen bertambah.
+        SaksiRegistry.Evidence memory e = reg.getEvidence(id);
+        assertEq(e.holder, investigator);
+        assertEq(e.pendingRecipient, address(0));
+        assertEq(uint8(e.status), uint8(SaksiRegistry.Status.Stored));
+        assertEq(e.discrepancyCount, 1);
+        assertEq(e.fileHash, FILE_HASH);
+
+        SaksiRegistry.CustodyRecord[] memory h = reg.getHistory(id);
+        assertEq(h.length, 3);
+        assertEq(uint8(h[2].action), uint8(SaksiRegistry.Action.DiscrepancyRecorded));
+        assertEq(h[2].actor, custodianA);
+        assertEq(h[2].counterparty, investigator);
+        assertEq(h[2].note, vm.toString(TAMPERED_HASH));
+    }
+
+    function test_Discrepancy_SenderCanRetryAndFlagStays() public {
+        uint256 id = _registerAndInitiate();
         vm.prank(custodianA);
         reg.acceptTransfer(id, TAMPERED_HASH);
+
+        // Pengirim boleh memulai serah-terima lagi, dan berkas asli diterima.
+        vm.prank(investigator);
+        reg.initiateTransfer(id, custodianA, "Kirim ulang berkas asli");
+        vm.prank(custodianA);
+        assertTrue(reg.acceptTransfer(id, FILE_HASH));
+
+        SaksiRegistry.Evidence memory e = reg.getEvidence(id);
+        assertEq(e.holder, custodianA);
+        assertEq(e.discrepancyCount, 1);
+        assertEq(reg.historyLength(id), 5);
+    }
+
+    function test_Discrepancy_SenderCanSendToAnotherCustodian() public {
+        uint256 id = _registerAndInitiate();
+        vm.prank(custodianA);
+        reg.acceptTransfer(id, TAMPERED_HASH);
+        vm.prank(investigator);
+        reg.initiateTransfer(id, custodianB, "");
+        vm.prank(custodianB);
+        reg.acceptTransfer(id, TAMPERED_HASH);
+        assertEq(reg.getEvidence(id).discrepancyCount, 2);
         assertEq(reg.getEvidence(id).holder, investigator);
+    }
+
+    function test_Discrepancy_CannotAcceptAfterwardsWithoutNewTransfer() public {
+        uint256 id = _registerAndInitiate();
+        vm.prank(custodianA);
+        reg.acceptTransfer(id, TAMPERED_HASH);
+        vm.expectRevert(abi.encodeWithSelector(SaksiRegistry.InvalidStatus.selector, id, SaksiRegistry.Status.Stored));
+        vm.prank(custodianA);
+        reg.acceptTransfer(id, FILE_HASH);
+    }
+
+    function test_RevertWhen_NonRecipientSubmitsWrongHash() public {
+        uint256 id = _registerAndInitiate();
+        address[3] memory callers = [custodianB, investigator, outsider];
+        for (uint256 i; i < callers.length; i++) {
+            vm.expectRevert(abi.encodeWithSelector(SaksiRegistry.NotPendingRecipient.selector, id, callers[i]));
+            vm.prank(callers[i]);
+            reg.acceptTransfer(id, TAMPERED_HASH);
+        }
+        // Tidak ada yang tercatat.
+        assertEq(reg.getEvidence(id).discrepancyCount, 0);
+        assertEq(reg.historyLength(id), 2);
+    }
+
+    function test_RevertWhen_RecipientLostRoleBeforeWrongHash() public {
+        uint256 id = _registerAndInitiate();
+        vm.startPrank(admin);
+        reg.revokeRole(reg.CUSTODIAN_ROLE(), custodianA);
+        vm.stopPrank();
+        vm.expectRevert(abi.encodeWithSelector(SaksiRegistry.NotPersonnel.selector, custodianA));
+        vm.prank(custodianA);
+        reg.acceptTransfer(id, TAMPERED_HASH);
+        assertEq(reg.getEvidence(id).discrepancyCount, 0);
+    }
+
+    function test_RevertWhen_WrongHashWhilePaused() public {
+        uint256 id = _registerAndInitiate();
+        vm.prank(admin);
+        reg.pause();
+        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.prank(custodianA);
+        reg.acceptTransfer(id, TAMPERED_HASH);
+        assertEq(reg.getEvidence(id).discrepancyCount, 0);
     }
 
     function test_RevertWhen_AcceptByWrongCustodian() public {
@@ -467,6 +563,11 @@ contract SaksiRegistryTest is Test {
         vm.prank(custodianA);
         reg.initiateTransfer(id, custodianB, "Ke lab forensik");
         vm.prank(custodianB);
+        reg.acceptTransfer(id, TAMPERED_HASH);
+
+        vm.prank(custodianA);
+        reg.initiateTransfer(id, custodianB, "Ke lab forensik, kirim ulang");
+        vm.prank(custodianB);
         reg.rejectTransfer(id, "Label tidak sesuai");
 
         vm.prank(custodianA);
@@ -478,47 +579,51 @@ contract SaksiRegistryTest is Test {
         reg.closeEvidence(id, "Analisis selesai");
 
         SaksiRegistry.CustodyRecord[] memory h = reg.getHistory(id);
-        assertEq(h.length, 8);
-        SaksiRegistry.Action[8] memory expected = [
+        assertEq(h.length, 10);
+        SaksiRegistry.Action[10] memory expected = [
             SaksiRegistry.Action.Registered,
             SaksiRegistry.Action.TransferInitiated,
             SaksiRegistry.Action.TransferAccepted,
+            SaksiRegistry.Action.TransferInitiated,
+            SaksiRegistry.Action.DiscrepancyRecorded,
             SaksiRegistry.Action.TransferInitiated,
             SaksiRegistry.Action.TransferRejected,
             SaksiRegistry.Action.TransferInitiated,
             SaksiRegistry.Action.TransferAccepted,
             SaksiRegistry.Action.Closed
         ];
-        for (uint256 i; i < 8; i++) {
+        for (uint256 i; i < 10; i++) {
             assertEq(uint8(h[i].action), uint8(expected[i]));
         }
         assertEq(reg.getEvidence(id).holder, custodianB);
+        assertEq(reg.getEvidence(id).discrepancyCount, 1);
     }
 
     // --- fuzz -----------------------------------------------------------------
 
-    function testFuzz_Register(bytes32 fileHash, string calldata caseNumber, string calldata description) public {
-        vm.assume(fileHash != bytes32(0));
-        vm.assume(bytes(caseNumber).length > 0 && bytes(caseNumber).length <= 64);
-        vm.assume(bytes(description).length <= 256);
+    function testFuzz_Register(bytes32 fileHash, bytes32 caseRef, bytes32 metadataHash) public {
+        vm.assume(fileHash != bytes32(0) && caseRef != bytes32(0));
 
         vm.prank(investigator);
-        uint256 id = reg.registerEvidence(caseNumber, description, fileHash);
+        uint256 id = reg.registerEvidence(caseRef, metadataHash, fileHash);
 
         SaksiRegistry.Evidence memory e = reg.getEvidence(id);
         assertEq(e.fileHash, fileHash);
-        assertEq(e.caseNumber, caseNumber);
-        assertEq(e.description, description);
+        assertEq(e.caseRef, caseRef);
+        assertEq(e.metadataHash, metadataHash);
         assertEq(reg.evidenceIdByHash(fileHash), id);
         assertTrue(reg.verifyIntegrity(id, fileHash));
     }
 
-    function testFuzz_RevertWhen_AcceptWithAnyWrongHash(bytes32 wrongHash) public {
+    function testFuzz_AnyWrongHashRecordsDiscrepancy(bytes32 wrongHash) public {
         vm.assume(wrongHash != FILE_HASH);
         uint256 id = _registerAndInitiate();
-        vm.expectRevert(abi.encodeWithSelector(SaksiRegistry.HashMismatch.selector, id, FILE_HASH, wrongHash));
+        vm.expectEmit(true, true, false, true, address(reg));
+        emit SaksiRegistry.DiscrepancyRecorded(id, custodianA, FILE_HASH, wrongHash);
         vm.prank(custodianA);
-        reg.acceptTransfer(id, wrongHash);
+        assertFalse(reg.acceptTransfer(id, wrongHash));
+        assertEq(reg.getEvidence(id).holder, investigator);
+        assertEq(reg.getEvidence(id).discrepancyCount, 1);
     }
 
     function testFuzz_RevertWhen_NonPersonnelIsRecipient(address to) public {
