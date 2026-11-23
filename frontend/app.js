@@ -12,7 +12,9 @@ const ACTION = [
   "Serah-terima ditolak",
   "Serah-terima dibatalkan",
   "Bukti ditutup",
+  "Hash tidak cocok, tercatat",
 ];
+const A_DISCREPANCY = 6;
 const S_STORED = 1n;
 const S_IN_TRANSFER = 2n;
 
@@ -76,6 +78,93 @@ async function sha256File(file) {
   return "0x" + [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function shortHash(hash) {
+  return hash ? `${hash.slice(0, 10)}…${hash.slice(-6)}` : "–";
+}
+
+// ---------------------------------------------------------------------------
+// Data perkara: di rantai hanya hash, teks asli disimpan lokal di browser ini
+// ---------------------------------------------------------------------------
+
+// Nomor perkara dinormalisasi (spasi di ujung dibuang, huruf besar) sebelum di-hash,
+// sehingga "lp/123/xi/2026 " dan "LP/123/XI/2026" menghasilkan caseRef yang sama.
+function normalizeCaseNumber(text) {
+  return String(text).trim().toUpperCase();
+}
+
+function caseRefOf(caseNumber) {
+  return ethers.keccak256(ethers.toUtf8Bytes(normalizeCaseNumber(caseNumber)));
+}
+
+function metadataHashOf(description) {
+  const text = String(description || "").trim();
+  return text ? ethers.keccak256(ethers.toUtf8Bytes(text)) : ethers.ZeroHash;
+}
+
+function localMetaKey() {
+  return `saksi:meta:${cfg.chainId}:${cfg.contractAddress.toLowerCase()}`;
+}
+
+// localStorage bisa tidak tersedia (mode privat, diblokir); halaman tetap jalan tanpa itu.
+function loadLocalMeta() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(localMetaKey()) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLocalMeta(fileHash, entry) {
+  try {
+    const all = loadLocalMeta();
+    all[fileHash.toLowerCase()] = entry;
+    localStorage.setItem(localMetaKey(), JSON.stringify(all));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Teks lokal hanya ditampilkan jika hash-nya sama dengan yang tercatat di rantai.
+function localTextOf(fileHash, caseRef, metadataHash) {
+  const m = loadLocalMeta()[String(fileHash).toLowerCase()];
+  if (!m) return { caseNumber: null, description: null };
+  return {
+    caseNumber: typeof m.caseNumber === "string" && caseRefOf(m.caseNumber) === caseRef ? normalizeCaseNumber(m.caseNumber) : null,
+    description: typeof m.description === "string" && m.description && metadataHashOf(m.description) === metadataHash ? m.description : null,
+  };
+}
+
+const LOCAL_TAG = '<span class="local-tag">tersimpan lokal di browser ini</span>';
+
+function caseCell(e) {
+  const local = localTextOf(e.fileHash, e.caseRef, e.metadataHash);
+  return local.caseNumber
+    ? `${esc(local.caseNumber)}${LOCAL_TAG}`
+    : `<code title="${esc(e.caseRef)}">${shortHash(e.caseRef)}</code><span class="local-tag">hash on-chain</span>`;
+}
+
+function descriptionCell(e) {
+  const local = localTextOf(e.fileHash, e.caseRef, e.metadataHash);
+  if (local.description) return `${esc(local.description)}${LOCAL_TAG}`;
+  if (e.metadataHash === ethers.ZeroHash) return "–";
+  return `<code title="${esc(e.metadataHash)}">${shortHash(e.metadataHash)}</code><span class="local-tag">hash on-chain</span>`;
+}
+
+function findEvent(receipt, name) {
+  for (const entry of receipt.logs || []) {
+    if (entry.address.toLowerCase() !== cfg.contractAddress.toLowerCase()) continue;
+    try {
+      const parsed = state.reader.interface.parseLog(entry);
+      if (parsed && parsed.name === name) return parsed;
+    } catch {
+      // bukan event kontrak ini
+    }
+  }
+  return null;
+}
+
 function logItem(message, kind, time) {
   const li = document.createElement("li");
   if (kind) li.className = kind;
@@ -119,9 +208,6 @@ function explainError(err) {
   if (rev) {
     const a = rev.args || [];
     switch (rev.name) {
-      case "HashMismatch":
-        return `<strong>Hash berkas TIDAK COCOK.</strong> Terdaftar <code>${short(a[1])}</code>, diterima <code>${short(a[2])}</code>. ` +
-          "Berkas kemungkinan telah diubah, sehingga serah-terima ditolak oleh smart contract.";
       case "NotHolder":
         return "Ditolak: akun ini bukan pemegang bukti tersebut.";
       case "NotPendingRecipient":
@@ -133,7 +219,7 @@ function explainError(err) {
       case "DuplicateEvidence":
         return `Ditolak: berkas ini sudah terdaftar sebagai bukti #${a[1]}. Gunakan berkas lain (misalnya unduh berkas contoh baru).`;
       case "EmptyField":
-        return "Ditolak: nomor perkara dan berkas wajib diisi.";
+        return "Ditolak: nomor perkara dan berkas wajib diisi (hash tidak boleh kosong).";
       case "FieldTooLong":
         return `Ditolak: teks terlalu panjang (${a[0]} byte, maksimal ${a[1]} byte).`;
       case "EvidenceNotFound":
@@ -190,7 +276,9 @@ async function submitTx(call, contract, nonce) {
   }
 }
 
-async function sendTx(description, call) {
+// onReceipt (opsional) membaca event dari receipt dan mengembalikan { message, kind }
+// untuk menggantikan pesan sukses standar.
+async function sendTx(description, call, onReceipt) {
   if (state.busy) {
     const message = "Tunggu transaksi sebelumnya selesai.";
     log(message, "err");
@@ -209,8 +297,10 @@ async function sendTx(description, call) {
     const tx = await submitTx(call, contract, nonce);
     log(`Transaksi dikirim <code>${short(tx.hash)}</code>, menunggu blok…`);
     const receipt = await tx.wait();
-    log(`✔ ${esc(description)} berhasil (blok ${receipt.blockNumber}).`, "ok");
-    return { ok: true, blockNumber: receipt.blockNumber };
+    const custom = onReceipt ? onReceipt(receipt) : null;
+    if (custom) log(custom.message, custom.kind);
+    else log(`✔ ${esc(description)} berhasil (blok ${receipt.blockNumber} · <code>${short(receipt.hash)}</code>).`, "ok");
+    return { ok: true, blockNumber: receipt.blockNumber, receipt };
   } catch (err) {
     const message = explainError(err);
     log(`✖ ${message}`, "err");
@@ -296,7 +386,8 @@ $("action-form").addEventListener("submit", async (event) => {
 });
 
 $("action-dialog").addEventListener("close", () => {
-  if (dialogResolve) {
+  // Abaikan event close yang datang terlambat setelah dialog berikutnya sudah dibuka.
+  if (dialogResolve && !$("action-dialog").open) {
     dialogResolve(null);
     dialogResolve = null;
   }
@@ -308,7 +399,7 @@ $("action-dialog").addEventListener("close", () => {
 
 function personnelOptions(excludeAddr) {
   return cfg.accounts
-    .filter((a) => a.key !== "admin" && a.address.toLowerCase() !== excludeAddr.toLowerCase())
+    .filter((a) => a.key !== "admin" && a.key !== "outsider" && a.address.toLowerCase() !== excludeAddr.toLowerCase())
     .map((a) => ({ value: a.address, label: `${a.label} (${short(a.address)})` }));
 }
 
@@ -329,11 +420,46 @@ async function actionAccept(e) {
   const v = await openDialog({
     title: `Terima bukti #${e.id}`,
     desc: "Unggah berkas yang Anda terima. Hash-nya dihitung di browser dan dicocokkan oleh smart contract. " +
+      "Jika berbeda, bukti tidak berpindah dan ketidakcocokan <strong>dicatat permanen</strong> di blockchain. " +
       "Untuk demo deteksi perubahan, unggah <strong>versi yang diubah</strong>.",
     submitLabel: "Terima bukti",
     fields: [{ name: "fileHash", label: "Berkas yang diterima", type: "file", required: true }],
   });
-  if (v) await sendTx(`menerima bukti #${e.id}`, (c, o) => c.acceptTransfer(e.id, v.fileHash, o));
+  if (!v) return;
+
+  // Pemeriksaan awal hanya untuk memberi tahu pengguna; transaksi tetap dikirim agar
+  // ketidakcocokan tercatat di rantai, bukan dibatalkan diam-diam di browser.
+  let matches = true;
+  try {
+    matches = await state.reader.verifyIntegrity(e.id, v.fileHash);
+  } catch {
+    // biarkan smart contract yang memutuskan
+  }
+  if (!matches) {
+    const confirmed = await openDialog({
+      title: "Hash berkas tidak cocok",
+      desc: `Hash berkas Anda <code>${shortHash(v.fileHash)}</code> berbeda dari hash terdaftar <code>${shortHash(e.fileHash)}</code>. ` +
+        "Jika tetap dikirim, bukti <strong>tidak</strong> berpindah, serah-terima dibatalkan, dan ketidakcocokan ini " +
+        "<strong>tercatat permanen</strong> di blockchain atas nama akun Anda.",
+      submitLabel: "Kirim & catat",
+      fields: [],
+    });
+    if (!confirmed) {
+      log(`Penerimaan bukti #${e.id} dibatalkan sebelum dikirim. Tidak ada yang tercatat di blockchain.`);
+      return;
+    }
+  }
+
+  await sendTx(`menerima bukti #${e.id}`, (c, o) => c.acceptTransfer(e.id, v.fileHash, o), (receipt) => {
+    const ev = findEvent(receipt, "DiscrepancyRecorded");
+    if (!ev) return null;
+    return {
+      kind: "warn",
+      message: `⚠ <strong>Hash tidak cocok, tercatat di blok ${receipt.blockNumber}</strong> (tx <code>${short(receipt.hash)}</code>). ` +
+        `Terdaftar <code>${shortHash(ev.args.expected)}</code>, diserahkan <code>${shortHash(ev.args.provided)}</code>. ` +
+        `Bukti #${e.id} tetap dipegang ${esc(labelOf(e.holder))}; serah-terima dibatalkan.`,
+    };
+  });
 }
 
 async function actionReject(e) {
@@ -426,12 +552,15 @@ function renderEvidence() {
     if (e.id === state.selectedId) tr.className = "selected";
     const statusIdx = Number(e.status);
     const pending = e.status === S_IN_TRANSFER ? `<br><span class="hint">→ ${esc(labelOf(e.pendingRecipient))}</span>` : "";
+    const flag = e.discrepancyCount > 0n
+      ? `<br><span class="badge badge-err flag" title="Pernah diserahkan dengan berkas yang hash-nya berbeda">⚠ ${e.discrepancyCount}× hash tidak cocok</span>`
+      : "";
     // data-label dipakai CSS untuk menampilkan tabel sebagai kartu di layar sempit.
     tr.innerHTML = `<td data-label="#">${e.id}</td>` +
-      `<td data-label="Nomor perkara">${esc(e.caseNumber)}</td>` +
-      `<td data-label="Deskripsi">${esc(e.description) || "–"}</td>` +
+      `<td data-label="Nomor perkara"><span>${caseCell(e)}</span></td>` +
+      `<td data-label="Deskripsi"><span>${descriptionCell(e)}</span></td>` +
       `<td data-label="Pemegang">${esc(labelOf(e.holder))}</td>` +
-      `<td data-label="Status"><span><span class="badge ${STATUS_CLASS[statusIdx]}">${STATUS[statusIdx]}</span>${pending}</span></td>` +
+      `<td data-label="Status"><span><span class="badge ${STATUS_CLASS[statusIdx]}">${STATUS[statusIdx]}</span>${pending}${flag}</span></td>` +
       `<td data-label="Aksi"></td>`;
     const cell = tr.lastElementChild;
     const wrap = document.createElement("div");
@@ -449,6 +578,10 @@ function renderEvidence() {
     detail.className = "btn btn-small";
     detail.textContent = "Riwayat";
     detail.addEventListener("click", () => {
+      if (state.selectedId !== e.id) {
+        $("verify-result").innerHTML = "";
+        $("case-check-result").innerHTML = "";
+      }
       state.selectedId = e.id;
       renderEvidence();
       renderDetail();
@@ -467,12 +600,19 @@ async function renderDetail() {
   }
   $("detail").hidden = false;
   $("detail-id").textContent = `#${e.id}`;
+  const local = localTextOf(e.fileHash, e.caseRef, e.metadataHash);
+  const flag = e.discrepancyCount > 0n
+    ? `<span class="badge badge-err">⚠ ${e.discrepancyCount}× hash tidak cocok</span>`
+    : '<span class="badge badge-ok">Tidak ada</span>';
   $("detail-info").innerHTML =
-    `<dt>Nomor perkara</dt><dd>${esc(e.caseNumber)}</dd>` +
-    `<dt>Deskripsi</dt><dd>${esc(e.description) || "–"}</dd>` +
+    `<dt>Nomor perkara</dt><dd>${local.caseNumber ? esc(local.caseNumber) + LOCAL_TAG : '<span class="hint">tidak tersimpan di browser ini</span>'}</dd>` +
+    `<dt>Ref. perkara</dt><dd><code>${esc(e.caseRef)}</code><span class="local-tag">keccak256, on-chain</span></dd>` +
+    `<dt>Deskripsi</dt><dd>${local.description ? esc(local.description) + LOCAL_TAG : "–"}</dd>` +
+    `<dt>Hash deskripsi</dt><dd>${e.metadataHash === ethers.ZeroHash ? "–" : `<code>${esc(e.metadataHash)}</code>`}</dd>` +
     `<dt>Hash SHA-256</dt><dd><code>${esc(e.fileHash)}</code></dd>` +
     `<dt>Pemegang</dt><dd>${esc(labelOf(e.holder))}</dd>` +
     `<dt>Status</dt><dd>${STATUS[Number(e.status)]}</dd>` +
+    `<dt>Ketidakcocokan</dt><dd>${flag}</dd>` +
     `<dt>Didaftarkan</dt><dd>${formatTime(e.registeredAt)}</dd>`;
 
   const history = await state.reader.getHistory(e.id);
@@ -485,10 +625,16 @@ async function renderDetail() {
     if (action === 2) who += ` (dari ${esc(labelOf(r.counterparty))})`;
     if (action === 3) who += ` (pengirim: ${esc(labelOf(r.counterparty))})`;
     if (action === 4) who += ` (calon penerima: ${esc(labelOf(r.counterparty))})`;
+    if (action === A_DISCREPANCY) who += ` (pengirim: ${esc(labelOf(r.counterparty))})`;
     const li = document.createElement("li");
-    li.innerHTML = `<div><strong>${ACTION[action]}</strong> — ${who}</div>` +
-      `<div class="when">${formatTime(r.timestamp)}</div>` +
-      (r.note ? `<div class="note">“${esc(r.note)}”</div>` : "");
+    let note = r.note ? `<div class="note">“${esc(r.note)}”</div>` : "";
+    if (action === A_DISCREPANCY) {
+      li.className = "discrepancy";
+      note = `<div class="note-hash">Hash berkas yang diserahkan: <code>${esc(r.note)}</code><br>` +
+        "Bukti tidak berpindah; serah-terima dibatalkan.</div>";
+    }
+    li.innerHTML = `<div><strong>${ACTION[action] || "Aksi tidak dikenal"}</strong> — ${who}</div>` +
+      `<div class="when">${formatTime(r.timestamp)}</div>` + note;
     ol.append(li);
   }
 }
@@ -510,13 +656,14 @@ async function refresh() {
     const items = await Promise.all(ids.map((id) => state.reader.getEvidence(id)));
     state.evidence = items.map((e, i) => ({
       id: ids[i],
-      caseNumber: e.caseNumber,
-      description: e.description,
+      caseRef: e.caseRef,
+      metadataHash: e.metadataHash,
       fileHash: e.fileHash,
       holder: e.holder,
       pendingRecipient: e.pendingRecipient,
       status: e.status,
       registeredAt: e.registeredAt,
+      discrepancyCount: e.discrepancyCount,
     })).reverse();
     renderEvidence();
     if (state.selectedId) await renderDetail();
@@ -547,8 +694,14 @@ function describeEvent({ name, args: a }) {
   const who = (addr) => `<strong>${esc(labelOf(addr))}</strong>`;
   const note = a.note ? ` — “${esc(a.note)}”` : "";
   switch (name) {
-    case "EvidenceRegistered":
-      return `${who(a.holder)} mendaftarkan bukti #${a.id} (perkara ${esc(a.caseNumber)}).`;
+    case "EvidenceRegistered": {
+      const local = localTextOf(a.fileHash, a.caseRef, a.metadataHash);
+      const ref = local.caseNumber ? `perkara ${esc(local.caseNumber)}` : `ref. perkara <code>${shortHash(a.caseRef)}</code>`;
+      return `${who(a.holder)} mendaftarkan bukti #${a.id} (${ref}).`;
+    }
+    case "DiscrepancyRecorded":
+      return `⚠ ${who(a.by)} menyerahkan berkas dengan hash TIDAK COCOK untuk bukti #${a.id} ` +
+        `(terdaftar <code>${shortHash(a.expected)}</code>, diserahkan <code>${shortHash(a.provided)}</code>). Ketidakcocokan tercatat.`;
     case "TransferInitiated":
       return `${who(a.from)} menyerahkan bukti #${a.id} ke ${who(a.to)}${note}.`;
     case "TransferAccepted":
@@ -583,7 +736,14 @@ async function loadLogHistory() {
       for (const entry of logs.reverse()) {
         const parsed = state.reader.interface.parseLog(entry);
         const message = parsed && describeEvent(parsed);
-        if (message) entries.push({ message, blockNumber: entry.blockNumber, hash: entry.transactionHash });
+        if (message) {
+          entries.push({
+            message,
+            kind: parsed.name === "DiscrepancyRecorded" ? "warn" : "",
+            blockNumber: entry.blockNumber,
+            hash: entry.transactionHash,
+          });
+        }
       }
       to = from - 1;
     }
@@ -594,7 +754,7 @@ async function loadLogHistory() {
     placeholder.remove();
     for (const e of recent) {
       const detail = ` <span class="hint">blok ${e.blockNumber} · <code>${short(e.hash)}</code></span>`;
-      $("log").append(logItem(e.message + detail, "", formatTime(timeOf.get(e.blockNumber))));
+      $("log").append(logItem(e.message + detail, e.kind, formatTime(timeOf.get(e.blockNumber))));
     }
     if (recent.length === 0) $("log").append(logItem("Belum ada aktivitas tercatat di blockchain.", "", ""));
   } catch (err) {
@@ -699,6 +859,10 @@ async function init() {
   });
 
   const regForm = $("register-form");
+  regForm.caseNumber.addEventListener("input", () => {
+    const value = regForm.caseNumber.value.trim();
+    $("register-caseref").textContent = value ? caseRefOf(value) : "–";
+  });
   regForm.file.addEventListener("change", async () => {
     $("register-hash").textContent = regForm.file.files[0] ? await sha256File(regForm.file.files[0]) : "–";
   });
@@ -711,13 +875,24 @@ async function init() {
       log(`✖ ${esc(err.message)}`, "err");
       return;
     }
+    // Hanya hash yang dikirim ke rantai; teks asli disimpan di browser ini setelah berhasil.
+    const caseNumber = normalizeCaseNumber(regForm.caseNumber.value);
+    const description = regForm.description.value.trim();
+    const caseRef = caseRefOf(caseNumber);
+    const metadataHash = metadataHashOf(description);
     const result = await sendTx(
-      `mendaftarkan bukti perkara ${regForm.caseNumber.value.trim()}`,
-      (c, o) => c.registerEvidence(regForm.caseNumber.value.trim(), regForm.description.value.trim(), hash, o),
+      `mendaftarkan bukti perkara ${caseNumber}`,
+      (c, o) => c.registerEvidence(caseRef, metadataHash, hash, o),
     );
     if (result.ok) {
+      const saved = saveLocalMeta(hash, { caseNumber, description });
+      log(saved
+        ? `Di blockchain hanya tercatat ref. perkara <code>${shortHash(caseRef)}</code>. Teks nomor perkara dan deskripsi tersimpan lokal di browser ini.`
+        : `Di blockchain hanya tercatat ref. perkara <code>${shortHash(caseRef)}</code>. Browser ini tidak mengizinkan penyimpanan lokal, jadi teks asli tidak disimpan.`);
+      renderEvidence();
       regForm.reset();
       $("register-hash").textContent = "–";
+      $("register-caseref").textContent = "–";
     }
   });
 
@@ -735,6 +910,23 @@ async function init() {
       out.innerHTML = explainError(err);
     }
     event.target.value = "";
+  });
+
+  $("case-check").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const out = $("case-check-result");
+    const e = state.evidence.find((x) => x.id === state.selectedId);
+    const input = $("case-check-input").value;
+    if (!e || !input.trim()) {
+      out.innerHTML = "";
+      return;
+    }
+    const normalized = normalizeCaseNumber(input);
+    const ref = caseRefOf(normalized);
+    out.innerHTML = ref === e.caseRef
+      ? `<span class="badge badge-ok">COCOK</span> Nomor perkara <strong>${esc(normalized)}</strong> sama dengan ref. perkara on-chain bukti #${e.id}.`
+      : `<span class="badge badge-err">TIDAK COCOK</span> <strong>${esc(normalized)}</strong> menghasilkan <code>${shortHash(ref)}</code>, ` +
+        `sedangkan on-chain <code>${shortHash(e.caseRef)}</code>.`;
   });
 
   $("pause").addEventListener("click", () => adminAction("menjeda sistem", (c, o) => c.pause(o), "Sistem berhasil dijeda"));

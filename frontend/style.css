@@ -477,7 +477,29 @@ code { font-family: var(--mono); font-size: 12px; color: var(--gold-hover); }
   border: 1px solid var(--gold);
   cursor: pointer;
 }
-.verify-result { margin-top: 10px; font-size: 14px; }
+.verify-result { margin-top: 10px; font-size: 14px; overflow-wrap: anywhere; }
+
+/* Cocokkan nomor perkara */
+.case-check { margin-top: 12px; }
+.case-check label { font-size: 13px; font-weight: 500; }
+.case-check .hint { margin: 4px 0 8px; }
+.case-check-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.case-check-row input {
+  flex: 1 1 180px;
+  min-width: 0;
+  padding: 8px 10px;
+  font: 400 14px var(--sans);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 0;
+}
+.case-check-row input:focus-visible { border-color: var(--gold); outline-offset: 0; }
+.case-check-row input::placeholder { color: #6f7378; }
+
+/* Teks yang hanya ada di browser ini, atau hash on-chain sebagai gantinya */
+.local-tag { display: block; margin-top: 2px; font-size: 11px; letter-spacing: .3px; color: var(--muted); }
+.badge.flag { margin-top: 6px; white-space: normal; }
 
 .timeline { position: relative; list-style: none; margin: 0; padding: 0 0 0 30px; }
 .timeline::before {
@@ -506,6 +528,10 @@ code { font-family: var(--mono); font-size: 12px; color: var(--gold-hover); }
 .timeline li > div:first-child { overflow-wrap: anywhere; }
 .timeline .when { color: var(--muted); font-size: 12px; }
 .timeline .note { margin-top: 4px; padding-left: 10px; border-left: 2px solid var(--line); font-family: var(--serif); font-style: italic; color: var(--muted); }
+.timeline li.discrepancy::before { border-color: var(--err); background: var(--err-bg); }
+.timeline li.discrepancy:last-child::before { background: var(--err); }
+.timeline li.discrepancy > div:first-child strong:first-child { color: var(--err); }
+.timeline .note-hash { margin-top: 4px; padding: 6px 10px; border-left: 2px solid var(--err); background: var(--err-bg); font-size: 13px; overflow-wrap: anywhere; }
 
 /* Panel Admin */
 .system-status { margin: 12px 0; }
@@ -520,6 +546,8 @@ code { font-family: var(--mono); font-size: 12px; color: var(--gold-hover); }
 .log li.ok, .log li.ok strong { color: var(--ok); }
 .log li.err { border-left-color: var(--err); background: var(--err-bg); }
 .log li.err, .log li.err strong { color: var(--err); }
+.log li.warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.log li.warn, .log li.warn strong { color: var(--warn); }
 .log .time { margin-right: 8px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
 
 /* Footer */
